@@ -28,6 +28,53 @@ aparte, sin tocarse) para poder ofrecérsela a otro club en 2027.
 
 # Estado del proyecto
 
+**2026-10-02 — Revisión de punta a punta: 5 bugs reales encontrados y
+arreglados.** Se armó un simulador de Firebase en JS (guarda, lee y notifica
+cambios de verdad, no solo registra qué se llamó) para probar la app con
+clics e interacciones reales, no solo con datos sueltos. Bugs encontrados:
+
+1. **`agregarPartido` pisaba el Detalle.** Usaba `.set()` en vez de
+   `.update()` — como el formulario de "Agregar" es también la única forma de
+   corregir rival/resultado de una fecha ya cargada, volver a usarlo borraba
+   competencia/sistema táctico/links/penales/descripción ya guardados desde
+   "Detalle". Mismo patrón de bug que ya se había visto en Tigre
+   (`saveData` con `.set()` del nodo entero). Arreglado a `.update()`.
+2. **`guardarConvocatoria` perdía el 0.** Dorsal y minutos usaban
+   `Number(v||0)||null` — si se tipeaba "0" (un suplente que no llegó a
+   jugar, minutos=0), el resultado era `null`, indistinguible de "no se
+   cargó nada". Además volvía a pedir el plantel a Firebase en vez de leer
+   el DOM ya renderizado, con riesgo de romper si un jugador nuevo se
+   agregaba entre que se abrió la convocatoria y se guardó. Reescrito para
+   leer directo de los inputs en pantalla (`querySelectorAll`) y distinguir
+   "vacío" de "cero" (`v===''? null : Number(v)`).
+3. **Un jugador archivado seguía apareciendo** en los desplegables de
+   "agregar" de Lesiones/Contratos/Préstamos/Multimedia, aunque ya estaba
+   oculto en la tabla de Plantel — inconsistente con la idea de "archivado".
+   Nuevo helper `idsJugadoresActivos()`, reusado en los 4 lugares.
+4. **"Motivo de cambio" guardaba el texto "—" en vez de vacío.** El
+   `<option>` de la Convocatoria no tenía `value` explícito, así que el
+   navegador usaba el texto visible (el guión "—") como valor real del
+   campo vacío. Quedaba guardado en Firebase como el string "—" en vez de
+   `null`. Arreglado agregando `value="${m}"`.
+5. **"Sustituido por" nunca se restauraba al reabrir la convocatoria.** El
+   dato se guardaba bien en Firebase, pero el `<select>` armaba sus
+   `<option>` una sola vez sin marcar ninguno como `selected` — al reabrir
+   el panel, siempre se veía en blanco aunque el dato estuviera ahí.
+   `opcionesSustituto` pasó de ser un string fijo a una función que recibe
+   el jugador ya seleccionado.
+
+Probado después de cada arreglo: alta de jugador + ficha completa + archivar
+(desaparece de Plantel pero no de los desplegables de registros viejos),
+cambio de categoría (sigue sin mezclar datos, bug de Fase inicial sigue
+resuelto con las 5 suscripciones nuevas de Plantel), partido + Detalle +
+re-edición sin pérdida de datos, convocatoria con minutos=0 + roja con sus 4
+sub-campos + round-trip completo (cerrar y reabrir, los valores vuelven tal
+cual), Confiabilidad (avisa partido sin cargar, recordatorio de link
+faltante + Omitir), Tabla de posiciones manual, Documentos/Entrenamientos
+con roles (un "lector" ve los datos pero no los formularios ni Borrar), rol
+con categoría específica (puede editar Reserva, no Cuarta). Sin errores de
+consola en ningún paso. Lado Python: compila todo sin cambios.
+
 **2026-10-02 — Catálogo completo de campos de futdetail.** Se terminó de
 recorrer futdetail (se había cortado a medias por una caída de sesión/login
 intermedia) incluyendo lo que faltaba: Planificación, Entrenamientos,

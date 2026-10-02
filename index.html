@@ -431,6 +431,14 @@ function nombrePosicion(codigo){
   return p ? p.nombre : (codigo || '');
 }
 
+// Para desplegables de "agregar nuevo registro" (Lesiones, Contratos,
+// Préstamos, Multimedia): un jugador archivado no debería poder sumar
+// registros nuevos, aunque sus registros viejos se sigan mostrando con su
+// nombre igual (eso sale de `plantel` completo, no de esta lista).
+function idsJugadoresActivos(plantel){
+  return Object.keys(plantel).filter(id=> !plantel[id].archivado);
+}
+
 function agregarJugador(){
   const j = {
     nombre: document.getElementById('pNombre').value.trim(),
@@ -452,7 +460,7 @@ function borrarJugador(id){
 
 // ---------- Lesiones ----------
 function lesionesHTML(plantel, lesiones){
-  const jugadoresIds = Object.keys(plantel);
+  const jugadoresIds = idsJugadoresActivos(plantel);
   const nombreJugador = jid => plantel[jid] ? `${plantel[jid].apellido}, ${plantel[jid].nombre}` : '(jugador no encontrado)';
   const opcionesJugador = jugadoresIds.map(id=>`<option value="${id}">${nombreJugador(id)}</option>`).join('');
   const filas = Object.entries(lesiones).map(([id,l])=>`
@@ -508,7 +516,7 @@ function borrarLesion(id){
 
 // ---------- Contratos ----------
 function contratosHTML(plantel, contratos){
-  const jugadoresIds = Object.keys(plantel);
+  const jugadoresIds = idsJugadoresActivos(plantel);
   const nombreJugador = jid => plantel[jid] ? `${plantel[jid].apellido}, ${plantel[jid].nombre}` : '(jugador no encontrado)';
   const opcionesJugador = jugadoresIds.map(id=>`<option value="${id}">${nombreJugador(id)}</option>`).join('');
   const hoy = new Date();
@@ -561,7 +569,7 @@ function borrarContrato(id){
 
 // ---------- Préstamos / Convocatorias a selección ----------
 function prestamosHTML(plantel, prestamos){
-  const jugadoresIds = Object.keys(plantel);
+  const jugadoresIds = idsJugadoresActivos(plantel);
   const nombreJugador = jid => plantel[jid] ? `${plantel[jid].apellido}, ${plantel[jid].nombre}` : '(jugador no encontrado)';
   const opcionesJugador = jugadoresIds.map(id=>`<option value="${id}">${nombreJugador(id)}</option>`).join('');
   const filas = Object.entries(prestamos).map(([id,p])=>`
@@ -614,7 +622,7 @@ function borrarPrestamo(id){
 
 // ---------- Multimedia (clips individuales por jugador) ----------
 function multimediaHTML(plantel, multimedia){
-  const jugadoresIds = Object.keys(plantel);
+  const jugadoresIds = idsJugadoresActivos(plantel);
   const nombreJugador = jid => plantel[jid] ? `${plantel[jid].apellido}, ${plantel[jid].nombre}` : '(jugador no encontrado)';
   const opcionesJugador = jugadoresIds.map(id=>`<option value="${id}">${nombreJugador(id)}</option>`).join('');
   const filas = Object.entries(multimedia).map(([id,m])=>`
@@ -735,7 +743,7 @@ function agregarPartido(){
     golesContra: Number(document.getElementById('mGC').value || 0),
     resultado: document.getElementById('mResultado').value
   };
-  db.ref('partidos/'+categoriaActual+'/'+fecha).set(p);
+  db.ref('partidos/'+categoriaActual+'/'+fecha).update(p);
 }
 
 function borrarPartido(fecha){
@@ -820,7 +828,8 @@ function convocatoriaHTML(cat, fecha, plantel, convocatoria){
     return `<div class="panel-anidado"><p>Cargá el plantel de esta categoría antes de armar la convocatoria.</p></div>`;
   }
   const dis = puedeEditar() ? '' : 'disabled';
-  const opcionesSustituto = jugadoresIds.map(id=>`<option value="${id}">${plantel[id].apellido}, ${plantel[id].nombre}</option>`).join('');
+  const opcionesSustituto = seleccionado => jugadoresIds
+    .map(id=>`<option value="${id}" ${seleccionado===id?'selected':''}>${plantel[id].apellido}, ${plantel[id].nombre}</option>`).join('');
   const filas = jugadoresIds
     .sort((a,b)=> (plantel[a].apellido||'').localeCompare(plantel[b].apellido||''))
     .map(id=>{
@@ -839,8 +848,8 @@ function convocatoriaHTML(cat, fecha, plantel, convocatoria){
         <td><input id="cv_rojaLink_${id}" value="${c.rojaLink||''}" placeholder="Link" style="width:100px;" ${dis}></td>
         <td><input id="cv_rojaPdf_${id}" value="${c.rojaPdf||''}" placeholder="PDF" style="width:100px;" ${dis}></td>
         <td><input id="cv_rojaObs_${id}" value="${c.rojaObservaciones||''}" placeholder="Obs." style="width:110px;" ${dis}></td>
-        <td><select id="cv_sustituidoPor_${id}" ${dis}><option value="">—</option>${opcionesSustituto}</select></td>
-        <td><select id="cv_motivo_${id}" ${dis}>${MOTIVOS_CAMBIO.map(m=>`<option ${c.motivoCambio===m?'selected':''}>${m||'—'}</option>`).join('')}</select></td>
+        <td><select id="cv_sustituidoPor_${id}" ${dis}><option value="" ${!c.sustituidoPor?'selected':''}>—</option>${opcionesSustituto(c.sustituidoPor)}</select></td>
+        <td><select id="cv_motivo_${id}" ${dis}>${MOTIVOS_CAMBIO.map(m=>`<option value="${m}" ${c.motivoCambio===m?'selected':''}>${m||'—'}</option>`).join('')}</select></td>
         <td><input type="checkbox" id="cv_destacado_${id}" ${c.destacado?'checked':''} ${dis}></td>
       </tr>`;
     }).join('');
@@ -930,29 +939,32 @@ function exportarCitacionPDF(cat, fecha){
 }
 
 function guardarConvocatoria(cat, fecha){
-  db.ref('plantel/'+cat).once('value').then(snap=>{
-    const plantel = snap.val() || {};
-    const out = {};
-    Object.keys(plantel).forEach(id=>{
-      out[id] = {
-        titular: document.getElementById('cv_titular_'+id).checked,
-        dorsal: Number(document.getElementById('cv_dorsal_'+id).value || 0) || null,
-        minutos: Number(document.getElementById('cv_minutos_'+id).value || 0) || null,
-        goles: Number(document.getElementById('cv_goles_'+id).value || 0) || 0,
-        asistencias: Number(document.getElementById('cv_asistencias_'+id).value || 0) || 0,
-        amarilla: document.getElementById('cv_amarilla_'+id).checked,
-        roja: document.getElementById('cv_roja_'+id).checked,
-        rojaFechaExpulsion: document.getElementById('cv_rojaFecha_'+id).value || null,
-        rojaLink: document.getElementById('cv_rojaLink_'+id).value.trim() || null,
-        rojaPdf: document.getElementById('cv_rojaPdf_'+id).value.trim() || null,
-        rojaObservaciones: document.getElementById('cv_rojaObs_'+id).value.trim() || null,
-        sustituidoPor: document.getElementById('cv_sustituidoPor_'+id).value || null,
-        motivoCambio: document.getElementById('cv_motivo_'+id).value || null,
-        destacado: document.getElementById('cv_destacado_'+id).checked,
-      };
-    });
-    db.ref('convocatorias/'+cat+'/'+fecha).set(out);
+  // Lee los ids de jugador directo del DOM ya renderizado (en vez de volver a
+  // pedir el plantel a Firebase): evita que un jugador agregado al plantel
+  // justo después de abrir esta convocatoria rompa el guardado buscando un
+  // input que todavía no existe.
+  const numeroOVacio = v => v === '' ? null : Number(v);
+  const out = {};
+  document.querySelectorAll('[id^="cv_titular_"]').forEach(elTitular=>{
+    const id = elTitular.id.slice('cv_titular_'.length);
+    out[id] = {
+      titular: elTitular.checked,
+      dorsal: numeroOVacio(document.getElementById('cv_dorsal_'+id).value),
+      minutos: numeroOVacio(document.getElementById('cv_minutos_'+id).value),
+      goles: Number(document.getElementById('cv_goles_'+id).value || 0),
+      asistencias: Number(document.getElementById('cv_asistencias_'+id).value || 0),
+      amarilla: document.getElementById('cv_amarilla_'+id).checked,
+      roja: document.getElementById('cv_roja_'+id).checked,
+      rojaFechaExpulsion: document.getElementById('cv_rojaFecha_'+id).value || null,
+      rojaLink: document.getElementById('cv_rojaLink_'+id).value.trim() || null,
+      rojaPdf: document.getElementById('cv_rojaPdf_'+id).value.trim() || null,
+      rojaObservaciones: document.getElementById('cv_rojaObs_'+id).value.trim() || null,
+      sustituidoPor: document.getElementById('cv_sustituidoPor_'+id).value || null,
+      motivoCambio: document.getElementById('cv_motivo_'+id).value || null,
+      destacado: document.getElementById('cv_destacado_'+id).checked,
+    };
   });
+  db.ref('convocatorias/'+cat+'/'+fecha).set(out);
 }
 
 // ---------- Tabla de posiciones ----------
