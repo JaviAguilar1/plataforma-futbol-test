@@ -49,7 +49,7 @@ jugador de una sola vez). Sumado a `index.html`:
 - **Dos secciones nuevas en Plantel:** Préstamos/Convocatorias a selección
   (mismo formulario en futdetail para las dos cosas, un campo `tipo` las
   distingue) y Multimedia (clips individuales por jugador).
-- **Pestaña nueva "📁 Recursos"** con Documentos (Planificación + Proyectos
+- **Pestaña nueva "Recursos"** con Documentos (Planificación + Proyectos
   Externos + Rendimiento Físico unificados — en futdetail los 3 comparten
   exactamente el mismo formulario simple de título/fecha/descripción/url) y
   Entrenamientos (fecha, descripción, etiquetas, y 3 links: campo, arqueros,
@@ -78,7 +78,7 @@ Evaluando qué de Tigre aplica a un club genérico y qué no:
   posiciones SIEMPRE de Firebase (`tablaPosiciones`) — con un adaptador
   configurado, el scraper corría pero la pantalla nunca se enteraba. Ahora
   `renderTabla()` lee `data/tablas.json` cuando el adapter no es `"manual"`
-  (con botón "🔄 Actualizar"), y `scrape_main.py` también pide
+  (con botón "Actualizar"), y `scrape_main.py` también pide
   `fetch_fixture` (antes solo pedía la tabla de posiciones, nunca el
   fixture) y lo guarda en el mismo archivo bajo `"fixture"`.
 - **Confiabilidad** (botón nuevo en el nav, solo aparece si hay un adaptador
@@ -87,12 +87,12 @@ Evaluando qué de Tigre aplica a un club genérico y qué no:
   (resultado discrepante, o partido que la liga ya tiene y falta cargar),
   suma PJ/PG/PE/PP/GF/GC de los partidos propios y lo compara contra la fila
   del club en la tabla de la liga (busca por `nombreEquipoEnLiga`), y avisa
-  de partidos jugados sin ningún link cargado (con "👍 Omitir", guardado en
+  de partidos jugados sin ningún link cargado (con "Omitir", guardado en
   `recordatoriosOmitidos/<cat>/<fecha>`). Son los 3 cruces de los 5 de Tigre
   que tienen sentido con lo que existe acá — los otros dos (goleadores y
   links vs. futdetail) no aplican porque no hay ningún "futdetail" genérico
   con el que cruzar.
-- **Export a PDF:** ficha de jugador (botón "📄 PDF" en cada fila de
+- **Export a PDF:** ficha de jugador (botón "PDF" en cada fila de
   Plantel) y citación/convocatoria con espacio para firma (botón dentro de
   Convocatoria) — mismo patrón sin librerías que ya usa Tigre (ventana
   nueva + `window.print()`).

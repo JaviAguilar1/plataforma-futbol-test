@@ -79,8 +79,8 @@
   <button data-vista="plantel" class="activo">Plantel</button>
   <button data-vista="partidos">Partidos</button>
   <button data-vista="tabla">Tabla de posiciones</button>
-  <button data-vista="confiabilidad" id="navConfiabilidad" class="oculto">🔎 Confiabilidad</button>
-  <button data-vista="recursos">📁 Recursos</button>
+  <button data-vista="confiabilidad" id="navConfiabilidad" class="oculto">Confiabilidad</button>
+  <button data-vista="recursos">Recursos</button>
 </nav>
 
 <main>
@@ -313,7 +313,7 @@ function plantelHTML(datosCompletos){
       <td>${j.peso||''}</td>
       <td>
         <button class="secundario" onclick="toggleFicha('${id}')">${abierta?'Cerrar ficha':'Ver ficha'}</button>
-        <button class="secundario" onclick="exportarFichaJugador('${id}')">📄 PDF</button>
+        <button class="secundario" onclick="exportarFichaJugador('${id}')">PDF</button>
         ${puedeEditar()?`<button class="peligro" onclick="borrarJugador('${id}')">Borrar</button>`:''}
       </td>
     </tr>${filaExtra}`;
@@ -468,7 +468,7 @@ function lesionesHTML(plantel, lesiones){
     </tr>`).join('');
   return `
   <div class="card">
-    <h2>🤕 Lesiones</h2>
+    <h2>Lesiones</h2>
     ${puedeEditar() && jugadoresIds.length ? `
     <div class="fila-form">
       <select id="lJugador">${opcionesJugador}</select>
@@ -529,7 +529,7 @@ function contratosHTML(plantel, contratos){
   }).join('');
   return `
   <div class="card">
-    <h2>📄 Contratos</h2>
+    <h2>Contratos</h2>
     ${puedeEditar() && jugadoresIds.length ? `
     <div class="fila-form">
       <select id="cJugador">${opcionesJugador}</select>
@@ -576,7 +576,7 @@ function prestamosHTML(plantel, prestamos){
     </tr>`).join('');
   return `
   <div class="card">
-    <h2>✈️ Préstamos / Convocatorias a selección</h2>
+    <h2>Préstamos / Convocatorias a selección</h2>
     ${puedeEditar() && jugadoresIds.length ? `
     <div class="fila-form">
       <select id="prJugador">${opcionesJugador}</select>
@@ -628,7 +628,7 @@ function multimediaHTML(plantel, multimedia){
     </tr>`).join('');
   return `
   <div class="card">
-    <h2>🎬 Multimedia</h2>
+    <h2>Multimedia</h2>
     ${puedeEditar() && jugadoresIds.length ? `
     <div class="fila-form">
       <select id="mmJugador">${opcionesJugador}</select>
@@ -852,13 +852,13 @@ function convocatoriaHTML(cat, fecha, plantel, convocatoria){
       <thead><tr>
         <th>Jugador</th><th>Titular</th><th>Dorsal</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th>
         <th>F. expulsión</th><th>Link roja</th><th>PDF roja</th><th>Obs. roja</th>
-        <th>Sustituido por</th><th>Motivo cambio</th><th>★</th>
+        <th>Sustituido por</th><th>Motivo cambio</th><th>Destacado</th>
       </tr></thead>
       <tbody>${filas}</tbody>
     </table>
     </div>
     ${puedeEditar()?`<button class="accion" onclick="guardarConvocatoria('${cat}','${fecha}')" style="margin-top:10px;">Guardar convocatoria</button>`:''}
-    <button class="secundario" onclick="exportarCitacionPDF('${cat}','${fecha}')" style="margin-top:10px;">📄 Exportar citación (PDF)</button>
+    <button class="secundario" onclick="exportarCitacionPDF('${cat}','${fecha}')" style="margin-top:10px;">Exportar citación (PDF)</button>
   </div>`;
 }
 
@@ -1015,7 +1015,7 @@ function tablaHTML(filas, adapter){
     ${esManual ? '' : `<p style="color:#9aa4bd;font-size:.85rem;">
         Esta tabla se trae sola desde <code>data/tablas.json</code> (lo genera <code>scripts/scrape_main.py</code>
         con el adaptador <code>${adapter}</code>).
-        <button class="secundario" onclick="actualizarTablaLiga()">🔄 Actualizar</button>
+        <button class="secundario" onclick="actualizarTablaLiga()">Actualizar</button>
       </p>`}
     ${esManual && puedeEditar()?`
     <div class="fila-form">
@@ -1148,18 +1148,18 @@ function confiabilidadHTML(cat, partidosManual, fixtureLiga, tablaLiga, omitidos
 
   return `
   <div class="card">
-    <h2>🔎 Confiabilidad</h2>
+    <h2>Confiabilidad</h2>
     <p style="color:#9aa4bd;font-size:.85rem;">
       Cruza lo cargado a mano contra la fuente automática de liga (<code>data/tablas.json</code>).
       Si una sección no muestra nada, es que no encontró ninguna discrepancia.
     </p>
 
     <div class="subtitulo">Resultados</div>
-    ${avisosResultados.length ? `<ul>${avisosResultados.map(m=>`<li>${m}</li>`).join('')}</ul>` : '<p>Sin discrepancias. ✅</p>'}
+    ${avisosResultados.length ? `<ul>${avisosResultados.map(m=>`<li>${m}</li>`).join('')}</ul>` : '<p>Sin discrepancias.</p>'}
 
     <div class="subtitulo">Tabla propia (sumada de los partidos cargados) vs. tabla de la liga</div>
     ${!filaLiga ? '<p style="color:#9aa4bd;">Todavía no se encontró la fila del club en la tabla de la liga (revisá <code>nombreEquipoEnLiga</code> en club.json).</p>'
-      : !difTabla ? '<p>Sin discrepancias. ✅</p>' : `
+      : !difTabla ? '<p>Sin discrepancias.</p>' : `
       <table>
         <thead><tr><th></th><th>PJ</th><th>PG</th><th>PE</th><th>PP</th><th>GF</th><th>GC</th></tr></thead>
         <tbody>
@@ -1171,8 +1171,8 @@ function confiabilidadHTML(cat, partidosManual, fixtureLiga, tablaLiga, omitidos
     <div class="subtitulo">Partidos jugados sin ningún link cargado</div>
     ${recordatorios.length ? `<ul>${recordatorios.map(r=>`
       <li>Fecha ${r.fecha} vs ${r.rival||''} — sin links.
-        ${puedeEditar() ? `<button class="secundario" onclick="omitirRecordatorio('${r.fecha}')">👍 Omitir</button>` : ''}
-      </li>`).join('')}</ul>` : '<p>Sin pendientes. ✅</p>'}
+        ${puedeEditar() ? `<button class="secundario" onclick="omitirRecordatorio('${r.fecha}')">Omitir</button>` : ''}
+      </li>`).join('')}</ul>` : '<p>Sin pendientes.</p>'}
   </div>`;
 }
 
@@ -1209,7 +1209,7 @@ function documentosHTML(documentos){
     </tr>`).join('');
   return `
   <div class="card">
-    <h2>📑 Documentos (Planificación / Proyectos externos / Rendimiento físico)</h2>
+    <h2>Documentos (Planificación / Proyectos externos / Rendimiento físico)</h2>
     ${puedeEditar()?`
     <div class="fila-form">
       <select id="docTipo">${TIPOS_DOCUMENTO.map(t=>`<option>${t}</option>`).join('')}</select>
@@ -1262,7 +1262,7 @@ function entrenamientosHTML(entrenamientos){
     </tr>`).join('');
   return `
   <div class="card">
-    <h2>🏃 Entrenamientos</h2>
+    <h2>Entrenamientos</h2>
     ${puedeEditar()?`
     <div class="fila-form">
       <input id="entFecha" type="date">
