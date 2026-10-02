@@ -28,6 +28,42 @@ aparte, sin tocarse) para poder ofrecérsela a otro club en 2027.
 
 # Estado del proyecto
 
+**2026-10-02 — Catálogo completo de campos de futdetail.** Se terminó de
+recorrer futdetail (se había cortado a medias por una caída de sesión/login
+intermedia) incluyendo lo que faltaba: Planificación, Entrenamientos,
+Proyectos Externos, Detalle de Resultados (reporte, sin campos nuevos),
+Multimedia, Préstamos, Convocatorias a Selección, y el selector de columnas
+de "Listado de Jugadores" (reveló el catálogo completo de campos del
+jugador de una sola vez). Sumado a `index.html`:
+- **Ficha de jugador:** Perfil, Valoración (Excelente/Muy buena/Buena/
+  Regular), Archivado + Fecha liberado (en vez de borrar un jugador se
+  archiva — igual criterio que futdetail con "Jug. Eliminados"/"Liberados";
+  oculto por default en el Plantel, con checkbox para mostrarlo), y el
+  Nombre de representante/padre/madre (antes solo tenían email/teléfono).
+- **Lesiones:** se sumaron Diagnóstico ("Lesión"), Tipo de lesión y
+  Localización — antes solo observaciones + fecha estimada de recuperación.
+- **Contratos:** se sumó Fecha de inicio (antes solo fecha de fin).
+- **Convocatoria:** se sumó Asistencias, y la tarjeta roja pasó de un
+  checkbox simple a sus 4 sub-campos reales de futdetail (fecha de
+  expulsión, link, PDF, observaciones).
+- **Dos secciones nuevas en Plantel:** Préstamos/Convocatorias a selección
+  (mismo formulario en futdetail para las dos cosas, un campo `tipo` las
+  distingue) y Multimedia (clips individuales por jugador).
+- **Pestaña nueva "📁 Recursos"** con Documentos (Planificación + Proyectos
+  Externos + Rendimiento Físico unificados — en futdetail los 3 comparten
+  exactamente el mismo formulario simple de título/fecha/descripción/url) y
+  Entrenamientos (fecha, descripción, etiquetas, y 3 links: campo, arqueros,
+  planificación).
+- `firebase/rules.example.json` actualizado con los 4 nodos nuevos
+  (`prestamos`, `multimedia`, `documentos`, `entrenamientos`).
+- Probado con datos falsos: filtro de archivados (oculto por default,
+  aparece con el checkbox), ficha completa guarda los campos nuevos (`db`
+  simulado), convocatoria guarda asistencias y los 4 sub-campos de la roja,
+  Documentos/Entrenamientos/Préstamos/Multimedia renderizan y guardan bien
+  — y la pestaña Recursos probada de punta a punta en el navegador (clic
+  real en el botón del nav). Sin probar contra Firebase real todavía, como
+  el resto del proyecto.
+
 **2026-10-02 — Fase 4: roles por categoría, Confiabilidad, export PDF.**
 Evaluando qué de Tigre aplica a un club genérico y qué no:
 

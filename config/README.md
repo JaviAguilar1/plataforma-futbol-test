@@ -51,13 +51,31 @@ Todo nace vacío — no hace falta crear estos nodos a mano, los arma la app
 sola al guardar algo por primera vez.
 
 - `plantel/<categoria>/<id>`: ficha completa del jugador (datos generales +
-  contacto + representante/padre/madre) — ver "Ver ficha" en cada fila.
-- `lesiones/<categoria>/<id>` y `contratos/<categoria>/<id>`: tablas simples
-  debajo del plantel, cada registro apunta a un `jugadorId` del plantel.
+  perfil/valoración + archivado/fecha liberado + contacto + nombre/email/
+  teléfono de representante, padre y madre) — ver "Ver ficha" en cada fila.
+  Un jugador "archivado" no se borra (nunca se pisa historial): queda oculto
+  por default, con un checkbox "Mostrar jugadores archivados" para verlo.
+- `lesiones/<categoria>/<id>`: jugador, fecha, diagnóstico, tipo de lesión,
+  localización, observaciones, fecha estimada de recuperación.
+- `contratos/<categoria>/<id>`: jugador, fecha de inicio, fecha de fin
+  (calcula "meses restantes" solo).
+- `prestamos/<categoria>/<id>`: jugador, tipo ("Préstamo a otro club" o
+  "Convocatoria a selección" — mismo concepto, un solo campo `tipo` los
+  distingue), club o selección, fecha inicio/fin, observaciones.
+- `multimedia/<categoria>/<id>`: clips individuales por jugador (fecha,
+  descripción, link, observaciones) — ej. "Individual vs Rival Fecha 5".
 - `partidos/<categoria>/<fechaNro>`: resultado + "Detalle" (competencia,
   sistema táctico, planes de juego, penales, descripción, links) +
-  "Convocatoria" (titular/suplente, dorsal, minutos, goles, tarjetas,
-  cambios y jugador destacado, un registro por jugador del plantel).
+  "Convocatoria" (titular/suplente, dorsal, minutos, goles, asistencias,
+  amarilla/roja —con fecha de expulsión, link, PDF y observaciones propias
+  de la roja—, a quién sustituyó, motivo del cambio y jugador destacado; un
+  registro por jugador del plantel).
+- `documentos/<categoria>/<id>`: Planificación, Proyectos externos y
+  Rendimiento físico unificados (mismo patrón simple en los tres: tipo,
+  título, microciclo opcional, fecha desde/hasta, descripción, url a un
+  documento externo — típicamente Drive).
+- `entrenamientos/<categoria>/<id>`: por semana — fecha, descripción,
+  etiquetas, y 3 links (entrenamiento de campo, de arqueros, planificación).
 - `tablaPosiciones/<categoria>`: manual o escrita por el adaptador de liga.
 
 No hay (todavía) ninguna pantalla que SUME estos datos en una estadística de

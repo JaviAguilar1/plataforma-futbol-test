@@ -18,11 +18,27 @@
       ".read": true,
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
     },
+    "prestamos": {
+      ".read": true,
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
+    },
+    "multimedia": {
+      ".read": true,
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
+    },
     "partidos": {
       ".read": true,
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
     },
     "convocatorias": {
+      ".read": true,
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
+    },
+    "documentos": {
+      ".read": true,
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
+    },
+    "entrenamientos": {
       ".read": true,
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
     },

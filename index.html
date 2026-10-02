@@ -80,6 +80,7 @@
   <button data-vista="partidos">Partidos</button>
   <button data-vista="tabla">Tabla de posiciones</button>
   <button data-vista="confiabilidad" id="navConfiabilidad" class="oculto">🔎 Confiabilidad</button>
+  <button data-vista="recursos">📁 Recursos</button>
 </nav>
 
 <main>
@@ -94,6 +95,7 @@
   <section id="vistaPartidos" class="oculto"></section>
   <section id="vistaTabla" class="oculto"></section>
   <section id="vistaConfiabilidad" class="oculto"></section>
+  <section id="vistaRecursos" class="oculto"></section>
 
   <div id="vistaLogin" class="login-box oculto">
     <h2>Ingresar</h2>
@@ -123,6 +125,10 @@ let fichaAbierta = {};              // categoriaId -> jugadorId con la ficha com
 let detalleAbiertoFecha = {};       // categoriaId -> fecha con el detalle del partido abierto
 let convocatoriaAbiertaFecha = {};  // categoriaId -> fecha con la convocatoria abierta
 const MOTIVOS_CAMBIO = ['', 'Táctico', 'Lesión', 'Fatiga', 'Disciplina'];
+const VALORACIONES = ['', 'Excelente', 'Muy buena', 'Buena', 'Regular'];
+const TIPOS_PRESTAMO = ['Préstamo a otro club', 'Convocatoria a selección'];
+const TIPOS_DOCUMENTO = ['Planificación', 'Proyecto externo', 'Rendimiento físico'];
+let mostrarArchivados = {}; // categoriaId -> bool
 
 function suscribirRefs(listaRefs, pares){
   listaRefs.forEach(r=>r.ref.off('value', r.cb));
@@ -253,10 +259,12 @@ function renderVistaActual(){
   document.getElementById('vistaPartidos').classList.add('oculto');
   document.getElementById('vistaTabla').classList.add('oculto');
   document.getElementById('vistaConfiabilidad').classList.add('oculto');
+  document.getElementById('vistaRecursos').classList.add('oculto');
   if(vistaActual==='plantel') renderPlantel();
   if(vistaActual==='partidos') renderPartidos();
   if(vistaActual==='tabla') renderTabla();
   if(vistaActual==='confiabilidad') renderConfiabilidad();
+  if(vistaActual==='recursos') renderRecursos();
 }
 
 // ---------- Plantel ----------
@@ -267,28 +275,37 @@ function renderPlantel(){
   if(!categoriaActual){ sec.innerHTML = '<p>No hay categorías configuradas.</p>'; return; }
   if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver y cargar datos.</p>'; return; }
   const cat = categoriaActual;
-  let plantelDatos = {}, lesionesDatos = {}, contratosDatos = {};
+  let plantelDatos = {}, lesionesDatos = {}, contratosDatos = {}, prestamosDatos = {}, multimediaDatos = {};
   const rerender = ()=>{
     sec.innerHTML = plantelHTML(plantelDatos)
       + lesionesHTML(plantelDatos, lesionesDatos)
-      + contratosHTML(plantelDatos, contratosDatos);
+      + contratosHTML(plantelDatos, contratosDatos)
+      + prestamosHTML(plantelDatos, prestamosDatos)
+      + multimediaHTML(plantelDatos, multimediaDatos);
   };
   suscribirRefs(_refsPlantel, [
     ['plantel/'+cat, v=>{ plantelDatos=v; rerender(); }],
     ['lesiones/'+cat, v=>{ lesionesDatos=v; rerender(); }],
     ['contratos/'+cat, v=>{ contratosDatos=v; rerender(); }],
+    ['prestamos/'+cat, v=>{ prestamosDatos=v; rerender(); }],
+    ['multimedia/'+cat, v=>{ multimediaDatos=v; rerender(); }],
   ]);
 }
 
-function plantelHTML(datos){
+function plantelHTML(datosCompletos){
+  const cat = categoriaActual;
+  const verArchivados = !!mostrarArchivados[cat];
+  const datos = Object.fromEntries(
+    Object.entries(datosCompletos).filter(([,j])=> verArchivados || !j.archivado)
+  );
   const opcionesPos = CLUB.posiciones.map(p=>`<option value="${p.codigo}">${p.nombre}</option>`).join('');
-  const idAbierto = fichaAbierta[categoriaActual];
+  const idAbierto = fichaAbierta[cat];
   const filas = Object.entries(datos).map(([id,j])=>{
     const abierta = id === idAbierto;
     const filaExtra = abierta ? `<tr><td colspan="7">${fichaExtraHTML(id, j)}</td></tr>` : '';
     return `
-    <tr>
-      <td>${j.apellido||''}, ${j.nombre||''}</td>
+    <tr${j.archivado?' style="opacity:.55;"':''}>
+      <td>${j.apellido||''}, ${j.nombre||''}${j.archivado?' <span class="tag-rol" style="background:var(--borde);">archivado</span>':''}</td>
       <td>${nombrePosicion(j.posicion)}</td>
       <td>${j.fechaNacimiento||''}</td>
       <td>${j.pieHabil||''}</td>
@@ -315,11 +332,20 @@ function plantelHTML(datos){
       <input id="pPeso" type="number" placeholder="Peso (kg)">
       <button class="accion" onclick="agregarJugador()">Agregar</button>
     </div>`:''}
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:.85rem;color:#9aa4bd;">
+      <input type="checkbox" id="chkMostrarArchivados" ${verArchivados?'checked':''} onchange="toggleMostrarArchivados()">
+      Mostrar jugadores archivados
+    </label>
     <table>
       <thead><tr><th>Jugador</th><th>Posición</th><th>Nacimiento</th><th>Pie</th><th>Altura</th><th>Peso</th><th></th></tr></thead>
       <tbody>${filas || '<tr><td colspan="7">Sin jugadores cargados.</td></tr>'}</tbody>
     </table>
   </div>`;
+}
+
+function toggleMostrarArchivados(){
+  mostrarArchivados[categoriaActual] = document.getElementById('chkMostrarArchivados').checked;
+  renderVistaActual();
 }
 
 function fichaExtraHTML(id, j){
@@ -328,6 +354,7 @@ function fichaExtraHTML(id, j){
   const opcionesPosSec = CLUB.posiciones.map(p=>
     `<option value="${p.codigo}" ${j.posicionSecundaria===p.codigo?'selected':''}>${p.nombre}</option>`).join('');
   const opcionPasaporte = v => `<option value="${v}" ${j.pasaporteComunitario===v?'selected':''}>${v||'—'}</option>`;
+  const opcionValoracion = v => `<option value="${v}" ${j.valoracion===v?'selected':''}>${v||'—'}</option>`;
   return `
   <div class="panel-anidado">
     <div style="display:flex;gap:28px;flex-wrap:wrap;">
@@ -341,7 +368,12 @@ function fichaExtraHTML(id, j){
         <div class="fila-form"><label>Nro. afiliado</label><input id="fx_nroAfiliado_${id}" value="${j.nroAfiliado||''}" ${dis}></div>
         <div class="fila-form"><label>Foto (URL)</label><input id="fx_foto_${id}" value="${j.foto||''}" ${dis}></div>
         <div class="fila-form"><label>Video promocional</label><input id="fx_video_${id}" value="${j.videoPromocional||''}" ${dis}></div>
+        <div class="fila-form"><label>Perfil</label><input id="fx_perfil_${id}" value="${j.perfil||''}" ${dis}></div>
+        <div class="fila-form"><label>Valoración</label><select id="fx_valoracion_${id}" ${dis}>${VALORACIONES.map(opcionValoracion).join('')}</select></div>
         <div class="fila-form"><label>Observaciones</label><textarea id="fx_obs_${id}" rows="2" ${dis}>${j.observaciones||''}</textarea></div>
+        <div class="subtitulo">Estado</div>
+        <div class="fila-form"><label>Archivado</label><input type="checkbox" id="fx_archivado_${id}" ${j.archivado?'checked':''} style="flex:none;" ${dis}></div>
+        <div class="fila-form"><label>Fecha liberado</label><input type="date" id="fx_fechaLiberado_${id}" value="${j.fechaLiberado||''}" ${dis}></div>
       </div>
       <div style="flex:1;min-width:280px;">
         <div class="subtitulo">Contacto del jugador</div>
@@ -349,12 +381,15 @@ function fichaExtraHTML(id, j){
         <div class="fila-form"><label>Teléfono</label><input id="fx_tel_${id}" value="${c.telefono||''}" ${dis}></div>
         <div class="fila-form"><label>Domicilio</label><input id="fx_domicilio_${id}" value="${c.domicilio||''}" ${dis}></div>
         <div class="subtitulo">Representante</div>
+        <div class="fila-form"><label>Nombre</label><input id="fx_repNombre_${id}" value="${rep.nombre||''}" ${dis}></div>
         <div class="fila-form"><label>Email</label><input id="fx_repEmail_${id}" value="${rep.email||''}" ${dis}></div>
         <div class="fila-form"><label>Teléfono</label><input id="fx_repTel_${id}" value="${rep.telefono||''}" ${dis}></div>
         <div class="subtitulo">Padre</div>
+        <div class="fila-form"><label>Nombre</label><input id="fx_padreNombre_${id}" value="${padre.nombre||''}" ${dis}></div>
         <div class="fila-form"><label>Email</label><input id="fx_padreEmail_${id}" value="${padre.email||''}" ${dis}></div>
         <div class="fila-form"><label>Teléfono</label><input id="fx_padreTel_${id}" value="${padre.telefono||''}" ${dis}></div>
         <div class="subtitulo">Madre</div>
+        <div class="fila-form"><label>Nombre</label><input id="fx_madreNombre_${id}" value="${madre.nombre||''}" ${dis}></div>
         <div class="fila-form"><label>Email</label><input id="fx_madreEmail_${id}" value="${madre.email||''}" ${dis}></div>
         <div class="fila-form"><label>Teléfono</label><input id="fx_madreTel_${id}" value="${madre.telefono||''}" ${dis}></div>
       </div>
@@ -374,11 +409,15 @@ function guardarFicha(id){
     nroAfiliado: v('nroAfiliado'),
     foto: v('foto'),
     videoPromocional: v('video'),
+    perfil: v('perfil'),
+    valoracion: v('valoracion'),
     observaciones: v('obs'),
+    archivado: document.getElementById('fx_archivado_'+id).checked,
+    fechaLiberado: v('fechaLiberado'),
     contacto: { email: v('email'), telefono: v('tel'), domicilio: v('domicilio') },
-    representante: { email: v('repEmail'), telefono: v('repTel') },
-    padre: { email: v('padreEmail'), telefono: v('padreTel') },
-    madre: { email: v('madreEmail'), telefono: v('madreTel') },
+    representante: { nombre: v('repNombre'), email: v('repEmail'), telefono: v('repTel') },
+    padre: { nombre: v('padreNombre'), email: v('padreEmail'), telefono: v('padreTel') },
+    madre: { nombre: v('madreNombre'), email: v('madreEmail'), telefono: v('madreTel') },
   });
 }
 
@@ -420,6 +459,9 @@ function lesionesHTML(plantel, lesiones){
     <tr>
       <td>${nombreJugador(l.jugadorId)}</td>
       <td>${l.fechaInicio||''}</td>
+      <td>${l.diagnostico||''}</td>
+      <td>${l.tipoLesion||''}</td>
+      <td>${l.localizacion||''}</td>
       <td>${l.observaciones||''}</td>
       <td>${l.fechaEstimadaRecuperacion||''}</td>
       ${puedeEditar()?`<td><button class="peligro" onclick="borrarLesion('${id}')">Borrar</button></td>`:''}
@@ -431,13 +473,16 @@ function lesionesHTML(plantel, lesiones){
     <div class="fila-form">
       <select id="lJugador">${opcionesJugador}</select>
       <input id="lFechaInicio" type="date" title="Desde">
+      <input id="lDiagnostico" placeholder="Lesión (diagnóstico)">
+      <input id="lTipo" placeholder="Tipo (ej. muscular)">
+      <input id="lLocalizacion" placeholder="Localización (ej. tobillo)">
       <input id="lObs" placeholder="Observaciones">
       <input id="lFechaRecup" type="date" title="Fecha estimada de recuperación">
       <button class="accion" onclick="agregarLesion()">Agregar</button>
     </div>`:''}
     <table>
-      <thead><tr><th>Jugador</th><th>Desde</th><th>Observaciones</th><th>F. estimada recup.</th>${puedeEditar()?'<th></th>':''}</tr></thead>
-      <tbody>${filas || '<tr><td colspan="5">Sin lesiones cargadas.</td></tr>'}</tbody>
+      <thead><tr><th>Jugador</th><th>Desde</th><th>Lesión</th><th>Tipo</th><th>Localización</th><th>Observaciones</th><th>F. estimada recup.</th>${puedeEditar()?'<th></th>':''}</tr></thead>
+      <tbody>${filas || '<tr><td colspan="8">Sin lesiones cargadas.</td></tr>'}</tbody>
     </table>
   </div>`;
 }
@@ -446,6 +491,9 @@ function agregarLesion(){
   const l = {
     jugadorId: document.getElementById('lJugador').value,
     fechaInicio: document.getElementById('lFechaInicio').value,
+    diagnostico: document.getElementById('lDiagnostico').value.trim(),
+    tipoLesion: document.getElementById('lTipo').value.trim(),
+    localizacion: document.getElementById('lLocalizacion').value.trim(),
     observaciones: document.getElementById('lObs').value.trim(),
     fechaEstimadaRecuperacion: document.getElementById('lFechaRecup').value
   };
@@ -473,6 +521,7 @@ function contratosHTML(plantel, contratos){
     return `
     <tr>
       <td>${nombreJugador(c.jugadorId)}</td>
+      <td>${c.fechaInicio||''}</td>
       <td>${c.fechaFin||''}</td>
       <td>${meses}</td>
       ${puedeEditar()?`<td><button class="peligro" onclick="borrarContrato('${id}')">Borrar</button></td>`:''}
@@ -484,18 +533,23 @@ function contratosHTML(plantel, contratos){
     ${puedeEditar() && jugadoresIds.length ? `
     <div class="fila-form">
       <select id="cJugador">${opcionesJugador}</select>
+      <input id="cFechaInicio" type="date" title="Fecha de inicio de contrato">
       <input id="cFechaFin" type="date" title="Fecha de fin de contrato">
       <button class="accion" onclick="agregarContrato()">Agregar</button>
     </div>`:''}
     <table>
-      <thead><tr><th>Jugador</th><th>Fecha fin</th><th>Meses restantes</th>${puedeEditar()?'<th></th>':''}</tr></thead>
-      <tbody>${filas || '<tr><td colspan="4">Sin contratos cargados.</td></tr>'}</tbody>
+      <thead><tr><th>Jugador</th><th>Fecha inicio</th><th>Fecha fin</th><th>Meses restantes</th>${puedeEditar()?'<th></th>':''}</tr></thead>
+      <tbody>${filas || '<tr><td colspan="5">Sin contratos cargados.</td></tr>'}</tbody>
     </table>
   </div>`;
 }
 
 function agregarContrato(){
-  const c = { jugadorId: document.getElementById('cJugador').value, fechaFin: document.getElementById('cFechaFin').value };
+  const c = {
+    jugadorId: document.getElementById('cJugador').value,
+    fechaInicio: document.getElementById('cFechaInicio').value,
+    fechaFin: document.getElementById('cFechaFin').value,
+  };
   if(!c.jugadorId || !c.fechaFin) return;
   db.ref('contratos/'+categoriaActual).push(c);
 }
@@ -503,6 +557,109 @@ function agregarContrato(){
 function borrarContrato(id){
   if(!confirm('¿Borrar contrato?')) return;
   db.ref('contratos/'+categoriaActual+'/'+id).remove();
+}
+
+// ---------- Préstamos / Convocatorias a selección ----------
+function prestamosHTML(plantel, prestamos){
+  const jugadoresIds = Object.keys(plantel);
+  const nombreJugador = jid => plantel[jid] ? `${plantel[jid].apellido}, ${plantel[jid].nombre}` : '(jugador no encontrado)';
+  const opcionesJugador = jugadoresIds.map(id=>`<option value="${id}">${nombreJugador(id)}</option>`).join('');
+  const filas = Object.entries(prestamos).map(([id,p])=>`
+    <tr>
+      <td>${nombreJugador(p.jugadorId)}</td>
+      <td>${p.tipo||''}</td>
+      <td>${p.clubOSeleccion||''}</td>
+      <td>${p.fechaInicio||''}</td>
+      <td>${p.fechaFin||''}</td>
+      <td>${p.observaciones||''}</td>
+      ${puedeEditar()?`<td><button class="peligro" onclick="borrarPrestamo('${id}')">Borrar</button></td>`:''}
+    </tr>`).join('');
+  return `
+  <div class="card">
+    <h2>✈️ Préstamos / Convocatorias a selección</h2>
+    ${puedeEditar() && jugadoresIds.length ? `
+    <div class="fila-form">
+      <select id="prJugador">${opcionesJugador}</select>
+      <select id="prTipo">${TIPOS_PRESTAMO.map(t=>`<option>${t}</option>`).join('')}</select>
+      <input id="prClub" placeholder="Club / selección">
+      <input id="prFechaInicio" type="date" title="Fecha inicio">
+      <input id="prFechaFin" type="date" title="Fecha fin">
+      <input id="prObs" placeholder="Observaciones">
+      <button class="accion" onclick="agregarPrestamo()">Agregar</button>
+    </div>`:''}
+    <table>
+      <thead><tr><th>Jugador</th><th>Tipo</th><th>Club / selección</th><th>Desde</th><th>Hasta</th><th>Observaciones</th>${puedeEditar()?'<th></th>':''}</tr></thead>
+      <tbody>${filas || '<tr><td colspan="7">Sin préstamos ni convocatorias cargadas.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+
+function agregarPrestamo(){
+  const p = {
+    jugadorId: document.getElementById('prJugador').value,
+    tipo: document.getElementById('prTipo').value,
+    clubOSeleccion: document.getElementById('prClub').value.trim(),
+    fechaInicio: document.getElementById('prFechaInicio').value,
+    fechaFin: document.getElementById('prFechaFin').value,
+    observaciones: document.getElementById('prObs').value.trim(),
+  };
+  if(!p.jugadorId) return;
+  db.ref('prestamos/'+categoriaActual).push(p);
+}
+
+function borrarPrestamo(id){
+  if(!confirm('¿Borrar este registro?')) return;
+  db.ref('prestamos/'+categoriaActual+'/'+id).remove();
+}
+
+// ---------- Multimedia (clips individuales por jugador) ----------
+function multimediaHTML(plantel, multimedia){
+  const jugadoresIds = Object.keys(plantel);
+  const nombreJugador = jid => plantel[jid] ? `${plantel[jid].apellido}, ${plantel[jid].nombre}` : '(jugador no encontrado)';
+  const opcionesJugador = jugadoresIds.map(id=>`<option value="${id}">${nombreJugador(id)}</option>`).join('');
+  const filas = Object.entries(multimedia).map(([id,m])=>`
+    <tr>
+      <td>${nombreJugador(m.jugadorId)}</td>
+      <td>${m.fecha||''}</td>
+      <td>${m.descripcion||''}</td>
+      <td>${m.link?`<a href="${m.link}" target="_blank">Abrir</a>`:''}</td>
+      <td>${m.observaciones||''}</td>
+      ${puedeEditar()?`<td><button class="peligro" onclick="borrarMultimedia('${id}')">Borrar</button></td>`:''}
+    </tr>`).join('');
+  return `
+  <div class="card">
+    <h2>🎬 Multimedia</h2>
+    ${puedeEditar() && jugadoresIds.length ? `
+    <div class="fila-form">
+      <select id="mmJugador">${opcionesJugador}</select>
+      <input id="mmFecha" type="date">
+      <input id="mmDescripcion" placeholder="Descripción (ej. Individual vs Rival Fecha 5)">
+      <input id="mmLink" placeholder="Link">
+      <input id="mmObs" placeholder="Observaciones">
+      <button class="accion" onclick="agregarMultimedia()">Agregar</button>
+    </div>`:''}
+    <table>
+      <thead><tr><th>Jugador</th><th>Fecha</th><th>Descripción</th><th>Link</th><th>Observaciones</th>${puedeEditar()?'<th></th>':''}</tr></thead>
+      <tbody>${filas || '<tr><td colspan="6">Sin multimedia cargada.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+
+function agregarMultimedia(){
+  const m = {
+    jugadorId: document.getElementById('mmJugador').value,
+    fecha: document.getElementById('mmFecha').value,
+    descripcion: document.getElementById('mmDescripcion').value.trim(),
+    link: document.getElementById('mmLink').value.trim(),
+    observaciones: document.getElementById('mmObs').value.trim(),
+  };
+  if(!m.jugadorId) return;
+  db.ref('multimedia/'+categoriaActual).push(m);
+}
+
+function borrarMultimedia(id){
+  if(!confirm('¿Borrar este registro?')) return;
+  db.ref('multimedia/'+categoriaActual+'/'+id).remove();
 }
 
 // ---------- Partidos / Resultados ----------
@@ -675,8 +832,13 @@ function convocatoriaHTML(cat, fecha, plantel, convocatoria){
         <td><input type="number" id="cv_dorsal_${id}" value="${c.dorsal ?? ''}" style="width:60px;" ${dis}></td>
         <td><input type="number" id="cv_minutos_${id}" value="${c.minutos ?? ''}" style="width:70px;" ${dis}></td>
         <td><input type="number" id="cv_goles_${id}" value="${c.goles ?? ''}" style="width:60px;" ${dis}></td>
+        <td><input type="number" id="cv_asistencias_${id}" value="${c.asistencias ?? ''}" style="width:60px;" ${dis}></td>
         <td><input type="checkbox" id="cv_amarilla_${id}" ${c.amarilla?'checked':''} ${dis}></td>
         <td><input type="checkbox" id="cv_roja_${id}" ${c.roja?'checked':''} ${dis}></td>
+        <td><input type="date" id="cv_rojaFecha_${id}" value="${c.rojaFechaExpulsion||''}" style="width:130px;" ${dis}></td>
+        <td><input id="cv_rojaLink_${id}" value="${c.rojaLink||''}" placeholder="Link" style="width:100px;" ${dis}></td>
+        <td><input id="cv_rojaPdf_${id}" value="${c.rojaPdf||''}" placeholder="PDF" style="width:100px;" ${dis}></td>
+        <td><input id="cv_rojaObs_${id}" value="${c.rojaObservaciones||''}" placeholder="Obs." style="width:110px;" ${dis}></td>
         <td><select id="cv_sustituidoPor_${id}" ${dis}><option value="">—</option>${opcionesSustituto}</select></td>
         <td><select id="cv_motivo_${id}" ${dis}>${MOTIVOS_CAMBIO.map(m=>`<option ${c.motivoCambio===m?'selected':''}>${m||'—'}</option>`).join('')}</select></td>
         <td><input type="checkbox" id="cv_destacado_${id}" ${c.destacado?'checked':''} ${dis}></td>
@@ -687,7 +849,11 @@ function convocatoriaHTML(cat, fecha, plantel, convocatoria){
     <div class="subtitulo">Convocatoria — Fecha ${fecha}</div>
     <div style="overflow-x:auto;">
     <table>
-      <thead><tr><th>Jugador</th><th>Titular</th><th>Dorsal</th><th>Min.</th><th>Goles</th><th>TA</th><th>TR</th><th>Sustituido por</th><th>Motivo cambio</th><th>★</th></tr></thead>
+      <thead><tr>
+        <th>Jugador</th><th>Titular</th><th>Dorsal</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th>
+        <th>F. expulsión</th><th>Link roja</th><th>PDF roja</th><th>Obs. roja</th>
+        <th>Sustituido por</th><th>Motivo cambio</th><th>★</th>
+      </tr></thead>
       <tbody>${filas}</tbody>
     </table>
     </div>
@@ -727,6 +893,7 @@ function exportarFichaJugador(id){
       <tr><th>Pie hábil</th><td>${j.pieHabil||''}</td><th>Altura / Peso</th><td>${j.altura||''} cm / ${j.peso||''} kg</td></tr>
       <tr><th>Nacionalidad</th><td>${j.nacionalidad||''}</td><th>Pasaporte comunitario</th><td>${j.pasaporteComunitario||''}</td></tr>
       <tr><th>Obra social</th><td>${j.obraSocial||''}</td><th>Nro. afiliado</th><td>${j.nroAfiliado||''}</td></tr>
+      <tr><th>Perfil</th><td>${j.perfil||''}</td><th>Valoración</th><td>${j.valoracion||''}</td></tr>
       <tr><th>Email</th><td>${c.email||''}</td><th>Teléfono</th><td>${c.telefono||''}</td></tr>
       <tr><th>Domicilio</th><td colspan="3">${c.domicilio||''}</td></tr>
     </table>
@@ -772,8 +939,13 @@ function guardarConvocatoria(cat, fecha){
         dorsal: Number(document.getElementById('cv_dorsal_'+id).value || 0) || null,
         minutos: Number(document.getElementById('cv_minutos_'+id).value || 0) || null,
         goles: Number(document.getElementById('cv_goles_'+id).value || 0) || 0,
+        asistencias: Number(document.getElementById('cv_asistencias_'+id).value || 0) || 0,
         amarilla: document.getElementById('cv_amarilla_'+id).checked,
         roja: document.getElementById('cv_roja_'+id).checked,
+        rojaFechaExpulsion: document.getElementById('cv_rojaFecha_'+id).value || null,
+        rojaLink: document.getElementById('cv_rojaLink_'+id).value.trim() || null,
+        rojaPdf: document.getElementById('cv_rojaPdf_'+id).value.trim() || null,
+        rojaObservaciones: document.getElementById('cv_rojaObs_'+id).value.trim() || null,
         sustituidoPor: document.getElementById('cv_sustituidoPor_'+id).value || null,
         motivoCambio: document.getElementById('cv_motivo_'+id).value || null,
         destacado: document.getElementById('cv_destacado_'+id).checked,
@@ -1002,6 +1174,128 @@ function confiabilidadHTML(cat, partidosManual, fixtureLiga, tablaLiga, omitidos
         ${puedeEditar() ? `<button class="secundario" onclick="omitirRecordatorio('${r.fecha}')">👍 Omitir</button>` : ''}
       </li>`).join('')}</ul>` : '<p>Sin pendientes. ✅</p>'}
   </div>`;
+}
+
+// ---------- Recursos (Documentos + Entrenamientos) ----------
+let _refsRecursos = [];
+function renderRecursos(){
+  const sec = document.getElementById('vistaRecursos');
+  sec.classList.remove('oculto');
+  if(!categoriaActual){ sec.innerHTML = '<p>No hay categorías configuradas.</p>'; return; }
+  if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver y cargar datos.</p>'; return; }
+  const cat = categoriaActual;
+  let documentosDatos = {}, entrenamientosDatos = {};
+  const rerender = ()=>{
+    sec.innerHTML = documentosHTML(documentosDatos) + entrenamientosHTML(entrenamientosDatos);
+  };
+  suscribirRefs(_refsRecursos, [
+    ['documentos/'+cat, v=>{ documentosDatos=v; rerender(); }],
+    ['entrenamientos/'+cat, v=>{ entrenamientosDatos=v; rerender(); }],
+  ]);
+}
+
+function documentosHTML(documentos){
+  const filas = Object.entries(documentos)
+    .sort((a,b)=> (b[1].fechaDesde||'').localeCompare(a[1].fechaDesde||''))
+    .map(([id,d])=>`
+    <tr>
+      <td>${d.tipo||''}</td>
+      <td>${d.titulo||''}</td>
+      <td>${d.microciclo||''}</td>
+      <td>${d.fechaDesde||''}${d.fechaHasta?' a '+d.fechaHasta:''}</td>
+      <td>${d.descripcion||''}</td>
+      <td>${d.url?`<a href="${d.url}" target="_blank">Abrir</a>`:''}</td>
+      ${puedeEditar()?`<td><button class="peligro" onclick="borrarDocumento('${id}')">Borrar</button></td>`:''}
+    </tr>`).join('');
+  return `
+  <div class="card">
+    <h2>📑 Documentos (Planificación / Proyectos externos / Rendimiento físico)</h2>
+    ${puedeEditar()?`
+    <div class="fila-form">
+      <select id="docTipo">${TIPOS_DOCUMENTO.map(t=>`<option>${t}</option>`).join('')}</select>
+      <input id="docTitulo" placeholder="Título">
+      <input id="docMicrociclo" type="number" placeholder="Microciclo (opcional)">
+      <input id="docFechaDesde" type="date" title="Fecha desde">
+      <input id="docFechaHasta" type="date" title="Fecha hasta (opcional)">
+      <input id="docDescripcion" placeholder="Descripción">
+      <input id="docUrl" placeholder="Url">
+      <button class="accion" onclick="agregarDocumento()">Agregar</button>
+    </div>`:''}
+    <table>
+      <thead><tr><th>Tipo</th><th>Título</th><th>Microciclo</th><th>Fecha</th><th>Descripción</th><th>Url</th>${puedeEditar()?'<th></th>':''}</tr></thead>
+      <tbody>${filas || '<tr><td colspan="7">Sin documentos cargados.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+
+function agregarDocumento(){
+  const d = {
+    tipo: document.getElementById('docTipo').value,
+    titulo: document.getElementById('docTitulo').value.trim(),
+    microciclo: document.getElementById('docMicrociclo').value || null,
+    fechaDesde: document.getElementById('docFechaDesde').value,
+    fechaHasta: document.getElementById('docFechaHasta').value || null,
+    descripcion: document.getElementById('docDescripcion').value.trim(),
+    url: document.getElementById('docUrl').value.trim(),
+  };
+  if(!d.titulo) return;
+  db.ref('documentos/'+categoriaActual).push(d);
+}
+
+function borrarDocumento(id){
+  if(!confirm('¿Borrar documento?')) return;
+  db.ref('documentos/'+categoriaActual+'/'+id).remove();
+}
+
+function entrenamientosHTML(entrenamientos){
+  const filas = Object.entries(entrenamientos)
+    .sort((a,b)=> (b[1].fecha||'').localeCompare(a[1].fecha||''))
+    .map(([id,e])=>`
+    <tr>
+      <td>${e.fecha||''}</td>
+      <td>${e.descripcion||''}</td>
+      <td>${e.etiquetas||''}</td>
+      <td>${e.linkCampo?`<a href="${e.linkCampo}" target="_blank">Campo</a>`:''}</td>
+      <td>${e.linkArqueros?`<a href="${e.linkArqueros}" target="_blank">Arqueros</a>`:''}</td>
+      <td>${e.urlPlanificacion?`<a href="${e.urlPlanificacion}" target="_blank">Planificación</a>`:''}</td>
+      ${puedeEditar()?`<td><button class="peligro" onclick="borrarEntrenamiento('${id}')">Borrar</button></td>`:''}
+    </tr>`).join('');
+  return `
+  <div class="card">
+    <h2>🏃 Entrenamientos</h2>
+    ${puedeEditar()?`
+    <div class="fila-form">
+      <input id="entFecha" type="date">
+      <input id="entDescripcion" placeholder="Descripción (ej. Semana 18)">
+      <input id="entEtiquetas" placeholder="Etiquetas (ej. Impacto, Descarga)">
+      <input id="entLinkCampo" placeholder="Link entrenamiento de campo">
+      <input id="entLinkArqueros" placeholder="Link entrenamiento de arqueros">
+      <input id="entUrlPlanificacion" placeholder="Url planificación">
+      <button class="accion" onclick="agregarEntrenamiento()">Agregar</button>
+    </div>`:''}
+    <table>
+      <thead><tr><th>Fecha</th><th>Descripción</th><th>Etiquetas</th><th>Campo</th><th>Arqueros</th><th>Planificación</th>${puedeEditar()?'<th></th>':''}</tr></thead>
+      <tbody>${filas || '<tr><td colspan="7">Sin entrenamientos cargados.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+
+function agregarEntrenamiento(){
+  const e = {
+    fecha: document.getElementById('entFecha').value,
+    descripcion: document.getElementById('entDescripcion').value.trim(),
+    etiquetas: document.getElementById('entEtiquetas').value.trim(),
+    linkCampo: document.getElementById('entLinkCampo').value.trim(),
+    linkArqueros: document.getElementById('entLinkArqueros').value.trim(),
+    urlPlanificacion: document.getElementById('entUrlPlanificacion').value.trim(),
+  };
+  if(!e.fecha) return;
+  db.ref('entrenamientos/'+categoriaActual).push(e);
+}
+
+function borrarEntrenamiento(id){
+  if(!confirm('¿Borrar entrenamiento?')) return;
+  db.ref('entrenamientos/'+categoriaActual+'/'+id).remove();
 }
 
 // ---------- Arranque ----------
