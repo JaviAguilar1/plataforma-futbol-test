@@ -28,6 +28,55 @@ aparte, sin tocarse) para poder ofrecérsela a otro club en 2027.
 
 # Estado del proyecto
 
+**2026-10-02 — Fase 4: roles por categoría, Confiabilidad, export PDF.**
+Evaluando qué de Tigre aplica a un club genérico y qué no:
+
+- **Roles finos:** `club.json -> roles` pasó de lista de strings a lista de
+  objetos `{id, nombre, categorias}` — `categorias` es `"todas"`, una lista
+  de `categoria.id`, o `[]` (solo lectura). `puedeEditar(catId?)` en
+  `index.html` ahora respeta eso (default a `categoriaActual` si no se pasa
+  nada, así ningún call site existente tuvo que tocarse). Permite dar de
+  alta, por ejemplo, un staff que solo edita Reserva.
+- **Bug real encontrado y corregido:** el adaptador de liga escribía
+  `data/tablas.json` (archivo estático) pero `index.html` leía la tabla de
+  posiciones SIEMPRE de Firebase (`tablaPosiciones`) — con un adaptador
+  configurado, el scraper corría pero la pantalla nunca se enteraba. Ahora
+  `renderTabla()` lee `data/tablas.json` cuando el adapter no es `"manual"`
+  (con botón "🔄 Actualizar"), y `scrape_main.py` también pide
+  `fetch_fixture` (antes solo pedía la tabla de posiciones, nunca el
+  fixture) y lo guarda en el mismo archivo bajo `"fixture"`.
+- **Confiabilidad** (botón nuevo en el nav, solo aparece si hay un adaptador
+  de liga real configurado — sin fuente automática no hay nada que cruzar):
+  compara partidos cargados a mano contra el fixture de `data/tablas.json`
+  (resultado discrepante, o partido que la liga ya tiene y falta cargar),
+  suma PJ/PG/PE/PP/GF/GC de los partidos propios y lo compara contra la fila
+  del club en la tabla de la liga (busca por `nombreEquipoEnLiga`), y avisa
+  de partidos jugados sin ningún link cargado (con "👍 Omitir", guardado en
+  `recordatoriosOmitidos/<cat>/<fecha>`). Son los 3 cruces de los 5 de Tigre
+  que tienen sentido con lo que existe acá — los otros dos (goleadores y
+  links vs. futdetail) no aplican porque no hay ningún "futdetail" genérico
+  con el que cruzar.
+- **Export a PDF:** ficha de jugador (botón "📄 PDF" en cada fila de
+  Plantel) y citación/convocatoria con espacio para firma (botón dentro de
+  Convocatoria) — mismo patrón sin librerías que ya usa Tigre (ventana
+  nueva + `window.print()`).
+- **Video sync, EXCLUIDO a propósito:** depende por completo de cómo cada
+  club filma y sube sus partidos (en Tigre: streams de YouTube, calibración
+  contra el cartel o el corte de edición) — no hay una versión genérica
+  razonable sin conocer ese flujo real. Revisar si/cuándo el club real lo
+  necesite y confirme cómo filma.
+- **Reglas de Firebase de ejemplo** (`firebase/rules.example.json`)
+  actualizadas con los nodos que se fueron sumando y que no estaban
+  cubiertos (`lesiones`, `contratos`, `convocatorias`,
+  `recordatoriosOmitidos`).
+- Probado: roles con categorías (incluye rol inexistente → false, categoría
+  explícita vs. `categoriaActual`), Confiabilidad con datos falsos (detecta
+  discrepancia de resultado, partido sin cargar, y diferencia de tabla
+  propia), export de ficha y de citación (con `db`/`window.open` simulados,
+  arma el HTML esperado) — y de punta a punta en el navegador real: con un
+  `club.json`/`data/tablas.json` de prueba (no comiteados), la Tabla de
+  posiciones mostró la fila que vino del archivo estático.
+
 **2026-10-02 — Fase 3: adaptadores de liga (datos de rivales).**
 `scripts/adapters/liga/generic_html_table.py` ya tiene las dos funciones
 terminadas: `fetch_tabla_posiciones` (ya existía) y ahora también
@@ -126,7 +175,11 @@ con `csv_generico` apuntando a su export.
   `generic_html_table`/`generic_json_api` contra él, o escribir un adaptador
   a medida si ninguno de los dos aplica (sitio con paginación rara, login
   requerido, etc.).
-- Fase 4 — lo que hoy tiene Tigre y todavía no está acá: confiabilidad
-  cruzada de fuentes, export PDF, video sync, roles finos, etc. — evaluar
-  cuáles aplican a un club genérico y cuáles son específicas de cómo trabaja
-  Tigre.
+- Fase 4 (resto) — video sync queda afuera hasta saber cómo filma el club
+  real; si en algún momento se suma, no reusar el de Tigre tal cual (está
+  atado a YouTube + Catapult con su calibración específica).
+- Sin estadísticas de temporada por jugador (convocatorias/PJ/goles
+  acumulados) — hoy se ven partido por partido en la Convocatoria.
+- Sin probar NADA de esto (desde Fase 1) contra un club real todavía —
+  todo lo automático (Catapult, adaptadores de liga) está verificado con
+  datos de prueba armados a mano, no con cuentas/sitios reales.

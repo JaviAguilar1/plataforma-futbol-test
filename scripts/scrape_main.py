@@ -2,8 +2,12 @@
 # -*- coding: utf-8 -*-
 """
 Orquesta los adaptadores configurados en club.json y genera data/tablas.json
-(tabla de posiciones por categoría) y, si el adaptador de GPS ya está
-terminado, data/gps.json (sesiones por jugador).
+(tabla de posiciones + fixture por categoría, lo que el adaptador de liga
+pueda traer) y, si el adaptador de GPS ya está terminado, data/gps.json
+(sesiones por jugador). data/tablas.json es un archivo ESTÁTICO que
+index.html lee directo (fetch), sin pasar por Firebase -- mismo patrón que
+ya usa Tigre: no hace falta que el scraper tenga credenciales de Firebase
+para esta parte.
 
 No rompe nada si una categoría/adaptador falla: la deja afuera del JSON de
 salida con un aviso por consola, en vez de cortar toda la corrida (mismo
@@ -34,22 +38,31 @@ def cargar_adapter(paquete: str, nombre: str):
     return importlib.import_module(f"scripts.adapters.{paquete}.{nombre}")
 
 
-def correr_liga(config: dict) -> dict:
+def correr_liga(config: dict):
     nombre_adapter = config.get("fuentes", {}).get("liga", {}).get("adapter", "manual")
     adapter = cargar_adapter("liga", nombre_adapter)
     if adapter is None:
         print("[liga] adapter = manual, no hay nada que scrapear.")
-        return {}
+        return {}, {}
 
     categorias_out = {}
+    fixture_out = {}
     for categoria in config["temporada"]["categorias"]:
         try:
             filas = adapter.fetch_tabla_posiciones(config, categoria)
             categorias_out[categoria["id"]] = filas
-            print(f"[liga] {categoria['id']}: {len(filas)} equipos")
+            print(f"[liga] {categoria['id']}: {len(filas)} equipos en la tabla")
         except Exception as e:
-            print(f"[liga][WARN] {categoria['id']} falló: {e}", file=sys.stderr)
-    return categorias_out
+            print(f"[liga][WARN] tabla de {categoria['id']} falló: {e}", file=sys.stderr)
+        try:
+            partidos = adapter.fetch_fixture(config, categoria)
+            fixture_out[categoria["id"]] = partidos
+            print(f"[liga] {categoria['id']}: {len(partidos)} partidos en el fixture")
+        except NotImplementedError:
+            pass
+        except Exception as e:
+            print(f"[liga][WARN] fixture de {categoria['id']} falló: {e}", file=sys.stderr)
+    return categorias_out, fixture_out
 
 
 def correr_gps(config: dict):
@@ -80,10 +93,10 @@ def main():
     config = cargar_config()
     os.makedirs(os.path.join(RAIZ, "data"), exist_ok=True)
 
-    tabla_posiciones = correr_liga(config)
-    if tabla_posiciones:
+    tabla_posiciones, fixture = correr_liga(config)
+    if tabla_posiciones or fixture:
         with open(SALIDA_TABLAS, "w", encoding="utf-8") as f:
-            json.dump({"categorias": tabla_posiciones}, f, ensure_ascii=False, indent=2)
+            json.dump({"categorias": tabla_posiciones, "fixture": fixture}, f, ensure_ascii=False, indent=2)
         print(f"Escribí {SALIDA_TABLAS}")
 
     sesiones_gps = correr_gps(config)

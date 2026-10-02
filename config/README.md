@@ -11,10 +11,17 @@ Copiá `club.example.json` a `club.json` y completá:
   Tigre). `esReserva` + `semestres` es para categorías que juegan por
   semestre en vez de por fecha de temporada completa (ajustá o sacá si el
   club nuevo no tiene ese caso).
-- **roles**: lista de roles que puede tener un usuario logueado. El primero
-  de la lista es el único con permiso total (equivalente a "admin"); el resto
-  los interpreta la app como "puede editar pero no administrar usuarios" —
-  ajustar en `index.html` si el club necesita algo más fino.
+- **roles**: lista de roles que puede tener un usuario logueado. Cada uno es
+  `{ "id": "...", "nombre": "...", "categorias": "todas" | ["CAT1","CAT2"] | [] }`.
+  `id` es lo que se guarda en `users/<uid>/role` (asignado a mano desde la
+  consola de Firebase, no hay pantalla para esto — mismo criterio que Tigre);
+  `nombre` es lo que se muestra; `categorias` define qué puede EDITAR ese rol
+  (`"todas"`, una lista de `categoria.id`, o `[]` para un rol de solo
+  lectura). El primero de la lista es el único que cuenta como "admin"
+  (`esAdmin()` en `index.html` — hoy no hay ninguna acción que dependa de
+  eso, queda para cuando haga falta distinguir "puede editar" de "puede
+  administrar usuarios"). Sirve para dar de alta, por ejemplo, un staff que
+  solo tiene que tocar una categoría (ver `"staffReserva"` en el ejemplo).
 - **posiciones**: catálogo de posiciones para la ficha de jugador. El default
   salió de relevar un sistema real de gestión de clubes (futdetail), es un
   catálogo estándar de fútbol — no hace falta tocarlo salvo que el club use

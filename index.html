@@ -79,6 +79,7 @@
   <button data-vista="plantel" class="activo">Plantel</button>
   <button data-vista="partidos">Partidos</button>
   <button data-vista="tabla">Tabla de posiciones</button>
+  <button data-vista="confiabilidad" id="navConfiabilidad" class="oculto">🔎 Confiabilidad</button>
 </nav>
 
 <main>
@@ -92,6 +93,7 @@
   <section id="vistaPlantel"></section>
   <section id="vistaPartidos" class="oculto"></section>
   <section id="vistaTabla" class="oculto"></section>
+  <section id="vistaConfiabilidad" class="oculto"></section>
 
   <div id="vistaLogin" class="login-box oculto">
     <h2>Ingresar</h2>
@@ -172,12 +174,23 @@ function poblarSelectorCategoria(){
   document.getElementById('selectorCategoriaWrap').classList.remove('oculto');
 }
 
-function puedeEditar(){
-  return !!rolActual && CLUB.roles.includes(rolActual);
+function rolDe(id){
+  return (CLUB.roles || []).find(r => (typeof r === 'string' ? r : r.id) === id);
+}
+
+function puedeEditar(catId){
+  if(!rolActual) return false;
+  const rol = rolDe(rolActual);
+  if(!rol) return false;
+  if(typeof rol === 'string') return true;
+  if(!rol.categorias || rol.categorias === 'todas') return true;
+  return rol.categorias.includes(catId || categoriaActual);
 }
 
 function esAdmin(){
-  return rolActual === CLUB.roles[0];
+  const primero = (CLUB.roles || [])[0];
+  if(!primero) return false;
+  return rolActual === (typeof primero === 'string' ? primero : primero.id);
 }
 
 // ---------- Auth ----------
@@ -209,7 +222,9 @@ function onAuthCambio(user){
 function actualizarEstadoSesion(){
   const el = document.getElementById('estadoSesion');
   if(usuario){
-    el.innerHTML = (rolActual ? `<span class="tag-rol">${rolActual}</span> ` : '')
+    const rol = rolActual ? rolDe(rolActual) : null;
+    const nombreRol = rol ? (typeof rol === 'string' ? rol : rol.nombre) : rolActual;
+    el.innerHTML = (rolActual ? `<span class="tag-rol">${nombreRol}</span> ` : '')
       + usuario.email + ' <button class="secundario" onclick="hacerLogout()">Salir</button>';
   } else {
     el.innerHTML = '<button class="secundario" onclick="mostrarLogin()">Ingresar</button>';
@@ -237,9 +252,11 @@ function renderVistaActual(){
   document.getElementById('vistaPlantel').classList.add('oculto');
   document.getElementById('vistaPartidos').classList.add('oculto');
   document.getElementById('vistaTabla').classList.add('oculto');
+  document.getElementById('vistaConfiabilidad').classList.add('oculto');
   if(vistaActual==='plantel') renderPlantel();
   if(vistaActual==='partidos') renderPartidos();
   if(vistaActual==='tabla') renderTabla();
+  if(vistaActual==='confiabilidad') renderConfiabilidad();
 }
 
 // ---------- Plantel ----------
@@ -279,6 +296,7 @@ function plantelHTML(datos){
       <td>${j.peso||''}</td>
       <td>
         <button class="secundario" onclick="toggleFicha('${id}')">${abierta?'Cerrar ficha':'Ver ficha'}</button>
+        <button class="secundario" onclick="exportarFichaJugador('${id}')">📄 PDF</button>
         ${puedeEditar()?`<button class="peligro" onclick="borrarJugador('${id}')">Borrar</button>`:''}
       </td>
     </tr>${filaExtra}`;
@@ -674,7 +692,74 @@ function convocatoriaHTML(cat, fecha, plantel, convocatoria){
     </table>
     </div>
     ${puedeEditar()?`<button class="accion" onclick="guardarConvocatoria('${cat}','${fecha}')" style="margin-top:10px;">Guardar convocatoria</button>`:''}
+    <button class="secundario" onclick="exportarCitacionPDF('${cat}','${fecha}')" style="margin-top:10px;">📄 Exportar citación (PDF)</button>
   </div>`;
+}
+
+// ---------- Export a PDF ----------
+function abrirVentanaPDF(titulo, cuerpoHtml){
+  const w = window.open('', '_blank');
+  if(!w){ alert('El navegador bloqueó la ventana nueva — permití pop-ups para este sitio.'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${titulo}</title>
+  <style>
+    body{font-family:Arial,sans-serif;color:#111;padding:24px;}
+    h1{font-size:20px;border-bottom:2px solid #333;padding-bottom:8px;}
+    h3{margin-top:24px;}
+    table{width:100%;border-collapse:collapse;margin-top:12px;}
+    th,td{border:1px solid #999;padding:6px 8px;font-size:13px;text-align:left;}
+    th{background:#eee;}
+    .firma-fila{display:flex;justify-content:space-between;align-items:flex-end;margin-top:16px;border-bottom:1px solid #999;padding-bottom:2px;}
+    .firma-fila span:last-child{font-size:11px;color:#555;}
+  </style></head><body>${cuerpoHtml}<script>window.onload=()=>window.print();<\/script></body></html>`);
+  w.document.close();
+}
+
+function exportarFichaJugador(id){
+  db.ref('plantel/'+categoriaActual+'/'+id).once('value').then(snap=>{
+    const j = snap.val();
+    if(!j) return;
+    const c = j.contacto || {};
+    const html = `
+    <h1>${CLUB.club.nombre} — Ficha de jugador</h1>
+    <p><strong>${j.apellido||''}, ${j.nombre||''}</strong> — ${nombrePosicion(j.posicion)}</p>
+    <table>
+      <tr><th>DNI</th><td>${j.dni||''}</td><th>Nacimiento</th><td>${j.fechaNacimiento||''}</td></tr>
+      <tr><th>Pie hábil</th><td>${j.pieHabil||''}</td><th>Altura / Peso</th><td>${j.altura||''} cm / ${j.peso||''} kg</td></tr>
+      <tr><th>Nacionalidad</th><td>${j.nacionalidad||''}</td><th>Pasaporte comunitario</th><td>${j.pasaporteComunitario||''}</td></tr>
+      <tr><th>Obra social</th><td>${j.obraSocial||''}</td><th>Nro. afiliado</th><td>${j.nroAfiliado||''}</td></tr>
+      <tr><th>Email</th><td>${c.email||''}</td><th>Teléfono</th><td>${c.telefono||''}</td></tr>
+      <tr><th>Domicilio</th><td colspan="3">${c.domicilio||''}</td></tr>
+    </table>
+    ${j.observaciones ? `<p><strong>Observaciones:</strong> ${j.observaciones}</p>` : ''}`;
+    abrirVentanaPDF('Ficha - '+(j.apellido||''), html);
+  });
+}
+
+function exportarCitacionPDF(cat, fecha){
+  Promise.all([
+    db.ref('plantel/'+cat).once('value'),
+    db.ref('convocatorias/'+cat+'/'+fecha).once('value'),
+    db.ref('partidos/'+cat+'/'+fecha).once('value'),
+  ]).then(([spPlantel, spConv, spPartido])=>{
+    const plantel = spPlantel.val() || {};
+    const conv = spConv.val() || {};
+    const partido = spPartido.val() || {};
+    const titulares = [], suplentes = [];
+    Object.entries(conv).forEach(([id,c])=>{
+      const j = plantel[id];
+      if(!j) return;
+      const linea = `${c.dorsal ?? ''} — ${j.apellido}, ${j.nombre}`;
+      (c.titular ? titulares : suplentes).push(linea);
+    });
+    const firmas = lista => lista.map(l=>`<div class="firma-fila"><span>${l}</span><span>Firma</span></div>`).join('')
+      || '<p style="color:#777;">(sin cargar)</p>';
+    const html = `
+    <h1>${CLUB.club.nombre} — Citación</h1>
+    <p>Fecha <strong>${fecha}</strong> — Rival: <strong>${partido.rival||''}</strong> (${partido.localia||''})</p>
+    <h3>Titulares</h3>${firmas(titulares)}
+    <h3>Suplentes</h3>${firmas(suplentes)}`;
+    abrirVentanaPDF('Citación F'+fecha, html);
+  });
 }
 
 function guardarConvocatoria(cat, fecha){
@@ -698,14 +783,40 @@ function guardarConvocatoria(cat, fecha){
   });
 }
 
-// ---------- Tabla de posiciones (manual) ----------
+// ---------- Tabla de posiciones ----------
+let TABLA_LIGA = null;
+async function cargarTablaLiga(forzar){
+  if(TABLA_LIGA && !forzar) return TABLA_LIGA;
+  try{
+    const r = await fetch('data/tablas.json' + (forzar ? '?t='+Date.now() : ''), {cache:'no-store'});
+    TABLA_LIGA = r.ok ? await r.json() : {categorias:{}, fixture:{}};
+  }catch(e){
+    TABLA_LIGA = {categorias:{}, fixture:{}};
+  }
+  return TABLA_LIGA;
+}
+
+async function actualizarTablaLiga(){
+  await cargarTablaLiga(true);
+  renderVistaActual();
+}
+
 let _refsTabla = [];
-function renderTabla(){
+async function renderTabla(){
   const sec = document.getElementById('vistaTabla');
   sec.classList.remove('oculto');
   if(!categoriaActual){ sec.innerHTML = '<p>No hay categorías configuradas.</p>'; return; }
-  if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver y cargar datos.</p>'; return; }
   const adapter = (CLUB.fuentes?.liga?.adapter) || 'manual';
+
+  if(adapter !== 'manual'){
+    suscribirRefs(_refsTabla, []);
+    const liga = await cargarTablaLiga();
+    const filas = (liga.categorias && liga.categorias[categoriaActual]) || [];
+    sec.innerHTML = tablaHTML(filas, adapter);
+    return;
+  }
+
+  if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver y cargar datos.</p>'; return; }
   suscribirRefs(_refsTabla, [
     ['tablaPosiciones/'+categoriaActual, v=>{ sec.innerHTML = tablaHTML(Array.isArray(v)?v:Object.values(v), adapter); }],
   ]);
@@ -729,7 +840,11 @@ function tablaHTML(filas, adapter){
   return `
   <div class="card">
     <h2>Tabla de posiciones</h2>
-    ${esManual ? '' : `<p style="color:#9aa4bd;font-size:.85rem;">Esta tabla se actualiza sola desde la fuente de liga configurada (adaptador: <code>${adapter}</code>).</p>`}
+    ${esManual ? '' : `<p style="color:#9aa4bd;font-size:.85rem;">
+        Esta tabla se trae sola desde <code>data/tablas.json</code> (lo genera <code>scripts/scrape_main.py</code>
+        con el adaptador <code>${adapter}</code>).
+        <button class="secundario" onclick="actualizarTablaLiga()">🔄 Actualizar</button>
+      </p>`}
     ${esManual && puedeEditar()?`
     <div class="fila-form">
       <input id="tEquipo" placeholder="Equipo">
@@ -779,11 +894,124 @@ function borrarFilaTabla(i){
   });
 }
 
+// ---------- Confiabilidad (carga manual vs. fuente automática de liga) ----------
+let _refsConfiabilidad = [];
+async function renderConfiabilidad(){
+  const sec = document.getElementById('vistaConfiabilidad');
+  sec.classList.remove('oculto');
+  if(!categoriaActual){ sec.innerHTML = '<p>No hay categorías configuradas.</p>'; return; }
+  if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver esto.</p>'; return; }
+  const cat = categoriaActual;
+  const liga = await cargarTablaLiga();
+  const fixtureLiga = (liga.fixture && liga.fixture[cat]) || [];
+  const tablaLiga = (liga.categorias && liga.categorias[cat]) || [];
+  let partidosManual = {}, omitidos = {};
+  const render = ()=>{ sec.innerHTML = confiabilidadHTML(cat, partidosManual, fixtureLiga, tablaLiga, omitidos); };
+  suscribirRefs(_refsConfiabilidad, [
+    ['partidos/'+cat, v=>{ partidosManual=v; render(); }],
+    ['recordatoriosOmitidos/'+cat, v=>{ omitidos=v; render(); }],
+  ]);
+}
+
+function compararResultado(fecha, manual, liga){
+  if(!liga || liga.resultado == null) return null; // la liga todavía no tiene el resultado, nada que comparar
+  if(!manual || manual.golesFavor == null){
+    return `La liga ya tiene el resultado de la fecha ${fecha} (vs ${liga.rival}, ${liga.resultado}) pero no está cargado a mano.`;
+  }
+  if(manual.golesFavor !== liga.golesFavor || manual.golesContra !== liga.golesContra){
+    return `Fecha ${fecha} vs ${liga.rival}: cargaste ${manual.golesFavor}-${manual.golesContra}, la liga dice ${liga.golesFavor}-${liga.golesContra}.`;
+  }
+  return null;
+}
+
+function calcularTablaPropia(partidosManual){
+  let pj=0, pg=0, pe=0, pp=0, gf=0, gc=0;
+  Object.values(partidosManual).forEach(p=>{
+    if(!p.resultado || p.resultado === 'No Disputado') return;
+    pj++;
+    gf += p.golesFavor || 0;
+    gc += p.golesContra || 0;
+    if(p.resultado === 'Victoria') pg++;
+    else if(p.resultado === 'Empate') pe++;
+    else if(p.resultado === 'Derrota') pp++;
+  });
+  return {pj, pg, pe, pp, gf, gc, pts: pg*3+pe};
+}
+
+function filaLigaDelClub(tablaLiga){
+  const nombre = (CLUB.fuentes?.liga?.config?.nombreEquipoEnLiga || CLUB.club.nombre || '').toLowerCase();
+  if(!nombre) return null;
+  return tablaLiga.find(f=>{
+    const equipo = (f.equipo||'').toLowerCase();
+    return equipo.includes(nombre) || nombre.includes(equipo);
+  }) || null;
+}
+
+function recordatoriosLinks(partidosManual, omitidos){
+  const tipos = CLUB.linksPartido || [];
+  const avisos = [];
+  Object.entries(partidosManual).forEach(([fecha,p])=>{
+    if(!p.resultado || p.resultado === 'No Disputado') return;
+    if(omitidos[fecha]) return;
+    const links = p.links || {};
+    if(!tipos.some(t=>links[t])) avisos.push({fecha, rival:p.rival});
+  });
+  return avisos;
+}
+
+function omitirRecordatorio(fecha){
+  db.ref('recordatoriosOmitidos/'+categoriaActual+'/'+fecha).set(true);
+}
+
+function confiabilidadHTML(cat, partidosManual, fixtureLiga, tablaLiga, omitidos){
+  const avisosResultados = fixtureLiga
+    .map(f=>compararResultado(f.fecha, partidosManual[f.fecha], f))
+    .filter(Boolean);
+
+  const propia = calcularTablaPropia(partidosManual);
+  const filaLiga = filaLigaDelClub(tablaLiga);
+  const difTabla = filaLiga && ['pj','pg','pe','pp','gf','gc'].some(c=>propia[c] !== filaLiga[c]);
+
+  const recordatorios = recordatoriosLinks(partidosManual, omitidos);
+
+  return `
+  <div class="card">
+    <h2>🔎 Confiabilidad</h2>
+    <p style="color:#9aa4bd;font-size:.85rem;">
+      Cruza lo cargado a mano contra la fuente automática de liga (<code>data/tablas.json</code>).
+      Si una sección no muestra nada, es que no encontró ninguna discrepancia.
+    </p>
+
+    <div class="subtitulo">Resultados</div>
+    ${avisosResultados.length ? `<ul>${avisosResultados.map(m=>`<li>${m}</li>`).join('')}</ul>` : '<p>Sin discrepancias. ✅</p>'}
+
+    <div class="subtitulo">Tabla propia (sumada de los partidos cargados) vs. tabla de la liga</div>
+    ${!filaLiga ? '<p style="color:#9aa4bd;">Todavía no se encontró la fila del club en la tabla de la liga (revisá <code>nombreEquipoEnLiga</code> en club.json).</p>'
+      : !difTabla ? '<p>Sin discrepancias. ✅</p>' : `
+      <table>
+        <thead><tr><th></th><th>PJ</th><th>PG</th><th>PE</th><th>PP</th><th>GF</th><th>GC</th></tr></thead>
+        <tbody>
+          <tr><td>Carga manual</td><td>${propia.pj}</td><td>${propia.pg}</td><td>${propia.pe}</td><td>${propia.pp}</td><td>${propia.gf}</td><td>${propia.gc}</td></tr>
+          <tr><td>Liga (${filaLiga.equipo})</td><td>${filaLiga.pj}</td><td>${filaLiga.pg}</td><td>${filaLiga.pe}</td><td>${filaLiga.pp}</td><td>${filaLiga.gf}</td><td>${filaLiga.gc}</td></tr>
+        </tbody>
+      </table>`}
+
+    <div class="subtitulo">Partidos jugados sin ningún link cargado</div>
+    ${recordatorios.length ? `<ul>${recordatorios.map(r=>`
+      <li>Fecha ${r.fecha} vs ${r.rival||''} — sin links.
+        ${puedeEditar() ? `<button class="secundario" onclick="omitirRecordatorio('${r.fecha}')">👍 Omitir</button>` : ''}
+      </li>`).join('')}</ul>` : '<p>Sin pendientes. ✅</p>'}
+  </div>`;
+}
+
 // ---------- Arranque ----------
 (async function init(){
   CLUB = await cargarConfigClub();
   aplicarTema(CLUB);
   poblarSelectorCategoria();
+  if((CLUB.fuentes?.liga?.adapter || 'manual') !== 'manual'){
+    document.getElementById('navConfiabilidad').classList.remove('oculto');
+  }
 
   if(window.FIREBASE_CONFIG_FALTA || !window.FIREBASE_CONFIG){
     document.getElementById('avisoConfig').textContent =

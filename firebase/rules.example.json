@@ -10,11 +10,27 @@
       ".read": true,
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
     },
+    "lesiones": {
+      ".read": true,
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
+    },
+    "contratos": {
+      ".read": true,
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
+    },
     "partidos": {
       ".read": true,
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
     },
+    "convocatorias": {
+      ".read": true,
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
+    },
     "tablaPosiciones": {
+      ".read": true,
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
+    },
+    "recordatoriosOmitidos": {
       ".read": true,
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
     }

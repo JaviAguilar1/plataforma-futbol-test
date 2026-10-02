@@ -25,7 +25,12 @@
       }
     ]
   },
-  "roles": ["admin", "editor", "lector"],
+  "roles": [
+    { "id": "admin", "nombre": "Administrador", "categorias": "todas" },
+    { "id": "editor", "nombre": "Editor", "categorias": "todas" },
+    { "id": "staffReserva", "nombre": "Staff Reserva", "categorias": ["RESERVA"] },
+    { "id": "lector", "nombre": "Lector", "categorias": [] }
+  ],
   "posiciones": [
     { "codigo": "ARQ", "nombre": "Arquero" },
     { "codigo": "DEF-LI", "nombre": "Líbero" },
