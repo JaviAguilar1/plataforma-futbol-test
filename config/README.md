@@ -21,7 +21,28 @@ Copiá `club.example.json` a `club.json` y completá:
   otra nomenclatura.
 - **linksPartido**: qué tipos de link se pueden cargar por partido (video,
   resumen, análisis, informe, etc.). Sacá o agregá según lo que el club
-  realmente use.
+  realmente use — si agregás una clave nueva, sumale también su etiqueta en
+  `ETIQUETAS_LINK` dentro de `index.html` (si no, se muestra la clave cruda).
+
+## Qué guarda cada parte de la app (Firebase)
+
+Todo nace vacío — no hace falta crear estos nodos a mano, los arma la app
+sola al guardar algo por primera vez.
+
+- `plantel/<categoria>/<id>`: ficha completa del jugador (datos generales +
+  contacto + representante/padre/madre) — ver "Ver ficha" en cada fila.
+- `lesiones/<categoria>/<id>` y `contratos/<categoria>/<id>`: tablas simples
+  debajo del plantel, cada registro apunta a un `jugadorId` del plantel.
+- `partidos/<categoria>/<fechaNro>`: resultado + "Detalle" (competencia,
+  sistema táctico, planes de juego, penales, descripción, links) +
+  "Convocatoria" (titular/suplente, dorsal, minutos, goles, tarjetas,
+  cambios y jugador destacado, un registro por jugador del plantel).
+- `tablaPosiciones/<categoria>`: manual o escrita por el adaptador de liga.
+
+No hay (todavía) ninguna pantalla que SUME estos datos en una estadística de
+temporada por jugador (convocatorias/PJ/goles/etc. acumulados) — hoy se ven
+partido por partido en la Convocatoria. Si hace falta, se puede calcular leyendo
+todas las fechas de `convocatorias/<categoria>/*` para un jugador.
 - **fuentes.liga.adapter**: nombre del archivo en
   `scripts/adapters/liga/` (sin `.py`) que trae tabla de posiciones/fixture
   de la liga real. `"manual"` = no hay scraper, se carga todo a mano en la

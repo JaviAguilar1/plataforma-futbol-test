@@ -28,6 +28,42 @@ aparte, sin tocarse) para poder ofrecérsela a otro club en 2027.
 
 # Estado del proyecto
 
+**2026-10-02 — Campos completos de plantel y partidos, basados en futdetail.**
+Se relevó futdetail (ficha de jugador, carga de partido, convocatoria por
+partido, estadísticas) para no dejar afuera ningún campo útil. Sumado a
+`index.html`:
+- **Ficha de jugador** ("Ver ficha" en cada fila de Plantel): DNI, posición
+  secundaria, nacionalidad, pasaporte comunitario, obra social, nro.
+  afiliado, foto, video promocional, observaciones, y contacto completo
+  (jugador, representante, padre, madre). Se guarda con `.update()`, no pisa
+  el resto de la ficha.
+- **Lesiones** y **Contratos**: tablas nuevas debajo del plantel (jugador +
+  fechas + observaciones; contratos calcula "meses restantes" solo).
+- **Partidos**: "Detalle" por fecha (competencia, sistema táctico, planes de
+  juego con/sin tenencia, penales, descripción, links — ahora sí hay UI para
+  los links, antes `linksPartido` estaba en la config pero no se podía cargar
+  nada desde la app) y resultado "No Disputado".
+- **Convocatoria por partido** (botón "Convocatoria" en cada fecha): una fila
+  por jugador del plantel con titular/suplente, dorsal, minutos, goles,
+  amarilla/roja, a quién sustituyó, motivo del cambio (táctico/lesión/
+  fatiga/disciplina) y jugador destacado — igual al modelo real de futdetail.
+  Guarda todo junto con un botón (no por jugador), para no generar un alud de
+  escrituras a Firebase.
+- **Bug de fondo corregido de paso**: `renderPlantel`/`renderPartidos`/
+  `renderTabla` escuchaban Firebase con `.off()+.on()` sobre la categoría
+  actual, pero nunca apagaban el listener de la categoría ANTERIOR al
+  cambiar de categoría — si esa categoría vieja recibía un cambio después,
+  pisaba la pantalla con datos de la categoría equivocada. Ahora
+  `suscribirRefs()` (helper nuevo, reusado en las tres vistas) guarda las
+  referencias activas y las apaga todas antes de suscribir las nuevas.
+- **Sin estadísticas de temporada por jugador todavía** (convocatorias/PJ/
+  goles acumulados) — hoy se ven partido por partido en la Convocatoria; se
+  podrían calcular sumando `convocatorias/<cat>/*` cuando haga falta.
+- Probado sin Firebase real: las funciones que arman el HTML (con datos
+  falsos) y las que guardan (con un `db` simulado que solo registra qué
+  path/dato intentarían escribir) — sin errores, escriben donde corresponde.
+  Falta probarlo contra una base real con datos de verdad.
+
 **2026-10-02 — Arranque (Fase 1, núcleo).** Investigación de proveedores de
 GPS (Catapult, STATSports, Kinexon, WIMU/RealTrack, Playermaker — ver
 `scripts/adapters/gps/`) y decisión de arquitectura: instancia por club,
