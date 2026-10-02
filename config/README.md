@@ -23,6 +23,20 @@ Copiá `club.example.json` a `club.json` y completá:
   resumen, análisis, informe, etc.). Sacá o agregá según lo que el club
   realmente use — si agregás una clave nueva, sumale también su etiqueta en
   `ETIQUETAS_LINK` dentro de `index.html` (si no, se muestra la clave cruda).
+- **fuentes.liga.adapter**: nombre del archivo en
+  `scripts/adapters/liga/` (sin `.py`) que trae tabla de posiciones/fixture
+  de la liga real. `"manual"` = no hay scraper, se carga todo a mano en la
+  app (válido como punto de partida). Los otros dos ya están terminados
+  (ver más abajo): `"generic_html_table"` (la liga publica una `<table>`
+  HTML común) y `"generic_json_api"` (la liga la dibuja con JavaScript a
+  partir de un endpoint JSON propio).
+- **fuentes.gps.adapter**: ídem para GPS — nombre del archivo en
+  `scripts/adapters/gps/`. `"csv_generico"` ya funciona sin configurar nada
+  más (ver ese archivo). `"catapult"` también está terminado (ver abajo).
+  Los demás (`kinexon`, `statsports`, `wimu`) son stubs: no encontramos
+  documentación pública de API confiable para ninguno de los tres — si el
+  club nuevo usa alguno, lo más rápido es arrancar con `csv_generico`
+  apuntando a lo que ese software exporte.
 
 ## Qué guarda cada parte de la app (Firebase)
 
@@ -41,19 +55,69 @@ sola al guardar algo por primera vez.
 
 No hay (todavía) ninguna pantalla que SUME estos datos en una estadística de
 temporada por jugador (convocatorias/PJ/goles/etc. acumulados) — hoy se ven
-partido por partido en la Convocatoria. Si hace falta, se puede calcular leyendo
-todas las fechas de `convocatorias/<categoria>/*` para un jugador.
-- **fuentes.liga.adapter**: nombre del archivo en
-  `scripts/adapters/liga/` (sin `.py`) que trae tabla de posiciones/fixture
-  de la liga real. `"manual"` = no hay scraper, se carga todo a mano en la
-  app (válido como punto de partida).
-- **fuentes.gps.adapter**: ídem para GPS — nombre del archivo en
-  `scripts/adapters/gps/`. `"csv_generico"` ya funciona sin configurar nada
-  más (ver ese archivo). `"catapult"` también está terminado (ver abajo).
-  Los demás (`kinexon`, `statsports`, `wimu`) son stubs: no encontramos
-  documentación pública de API confiable para ninguno de los tres — si el
-  club nuevo usa alguno, lo más rápido es arrancar con `csv_generico`
-  apuntando a lo que ese software exporte.
+partido por partido en la Convocatoria. Si hace falta, se puede calcular
+leyendo todas las fechas de `convocatorias/<categoria>/*` para un jugador.
+
+## Adaptadores de liga (datos de rivales)
+
+### generic_html_table — la liga publica una `<table>` HTML
+
+```json
+"fuentes": {
+  "liga": {
+    "adapter": "generic_html_table",
+    "config": {
+      "urls": { "<categoria.id>": "https://liga.com/posiciones-categoria" },
+      "urlsFixture": { "<categoria.id>": "https://liga.com/fixture-categoria" },
+      "nombreEquipoEnLiga": "Nombre EXACTO del club tal cual figura en esa tabla"
+    }
+  }
+}
+```
+
+Busca, dentro de todas las `<table>` de la página, la que tenga pinta de
+tabla de posiciones (columnas Equipo/PJ/PG/PE/PP/GF/GC/Pts) o de fixture
+(Fecha/Local/Visitante/Resultado) — no hace falta que sea exactamente esos
+nombres, reconoce alias razonables. `urlsFixture` puede omitirse si es la
+misma URL que `urls`. Si la página arma la tabla con JavaScript (sin
+`<table>` en el HTML crudo, como le pasa a la Reserva de Tigre con el widget
+de Opta), este adaptador no sirve — hay que mirar si el sitio tiene un
+endpoint JSON (ver el adaptador siguiente) o escribir uno nuevo.
+
+### generic_json_api — la liga la arma con JavaScript desde un endpoint JSON
+
+```json
+"fuentes": {
+  "liga": {
+    "adapter": "generic_json_api",
+    "config": {
+      "urls": { "<categoria.id>": "https://api.liga.com/standings?..." },
+      "rutaFilasTabla": "data.standings",
+      "mapeoTabla": {
+        "equipo": "team.name", "pj": "played", "pg": "won", "pe": "drawn",
+        "pp": "lost", "gf": "goalsFor", "gc": "goalsAgainst", "pts": "points"
+      },
+      "urlsFixture": { "<categoria.id>": "https://api.liga.com/fixture?..." },
+      "rutaFilasFixture": "data.matches",
+      "mapeoFixture": {
+        "fecha": "matchday", "local": "homeTeam.name", "visitante": "awayTeam.name",
+        "resultadoLocal": "score.fullTime.home", "resultadoVisitante": "score.fullTime.away"
+      },
+      "nombreEquipoEnLiga": "Nombre EXACTO del club tal cual figura en el JSON"
+    }
+  }
+}
+```
+
+El endpoint se encuentra abriendo la página real de la liga, F12 → pestaña
+Red/Network, filtrando por XHR/Fetch y mirando qué request trae la tabla o
+el fixture. Las rutas (`"team.name"`, `"score.fullTime.home"`, etc.) navegan
+el JSON real de esa respuesta — se arman mirándolo una sola vez, sin
+programar nada. Ver el docstring de
+`scripts/adapters/liga/generic_json_api.py` para más detalle (incluye el
+caso de un marcador como texto único en vez de dos campos separados).
+
+## Adaptadores de GPS
 
 ### Catapult
 

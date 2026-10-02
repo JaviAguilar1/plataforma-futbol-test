@@ -28,6 +28,24 @@ aparte, sin tocarse) para poder ofrecérsela a otro club en 2027.
 
 # Estado del proyecto
 
+**2026-10-02 — Fase 3: adaptadores de liga (datos de rivales).**
+`scripts/adapters/liga/generic_html_table.py` ya tiene las dos funciones
+terminadas: `fetch_tabla_posiciones` (ya existía) y ahora también
+`fetch_fixture`, con el mismo motor de detección de tabla por encabezado
+(refactoreado para poder buscar dos tipos de tabla distintos: posiciones y
+fixture). Se sumó un segundo adaptador de referencia,
+`generic_json_api.py`, para ligas que arman la tabla con JavaScript desde un
+endpoint JSON propio (mapeo de campos 100% configurable por rutas tipo
+"a.b.c", igual de espíritu que `csv_generico.py` para GPS). Documentados los
+dos en `config/README.md` con ejemplo de config completo.
+
+**Sin probar contra una liga real** (no sabemos todavía qué sitio va a
+scrapear el club nuevo) — se probaron los dos contra una página HTML y un
+JSON armados a mano (con un partido de otro equipo mezclado adentro, un
+resultado sin jugar, y local/visitante invertido), verificando que filtran
+bien los partidos que no son del club y manejan los partidos sin jugar.
+Probarlos de verdad en cuanto se sepa el sitio real.
+
 **2026-10-02 — Campos completos de plantel y partidos, basados en futdetail.**
 Se relevó futdetail (ficha de jugador, carga de partido, convocatoria por
 partido, estadísticas) para no dejar afuera ningún campo útil. Sumado a
@@ -104,7 +122,10 @@ con `csv_generico` apuntando a su export.
 **Pendiente (próximas fases, no empezadas):**
 - Fase 2 (resto) — si el club real termina usando Kinexon/STATSports/WIMU
   con API propia, completar ese adaptador con su documentación real.
-- Fase 3 — Adaptador de liga real (cuando se sepa qué liga/sitio scrapear).
+- Fase 3 (resto) — cuando se sepa la liga/sitio real del club nuevo: probar
+  `generic_html_table`/`generic_json_api` contra él, o escribir un adaptador
+  a medida si ninguno de los dos aplica (sitio con paginación rara, login
+  requerido, etc.).
 - Fase 4 — lo que hoy tiene Tigre y todavía no está acá: confiabilidad
   cruzada de fuentes, export PDF, video sync, roles finos, etc. — evaluar
   cuáles aplican a un club genérico y cuáles son específicas de cómo trabaja
