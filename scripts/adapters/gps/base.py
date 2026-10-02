@@ -26,10 +26,14 @@ class RegistroSesion(TypedDict, total=False):
     metros1821: float                # distancia en banda 18-21 km/h
     metros2125: float                # distancia en banda 21-25 km/h
     metros25Mas: float                # distancia a +25 km/h
+    distanciaAltaVelocidadPorMin: float
     sprints: int
     velMaxKmh: float
-    aceleraciones: int
+    aceleraciones: int               # conteo de aceleraciones "altas" (banda alta del proveedor)
+    aceleracionesBanda2: int         # conteo de aceleraciones de una banda mas baja, si el proveedor la separa
     desaceleraciones: int
+    aceleracionMaximaIndividual: float    # pico de UN esfuerzo, no un conteo (m/s^2)
+    desaceleracionMaximaIndividual: float
     playerLoad: Optional[float]
 
 

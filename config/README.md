@@ -28,9 +28,32 @@ Copiá `club.example.json` a `club.json` y completá:
   app (válido como punto de partida).
 - **fuentes.gps.adapter**: ídem para GPS — nombre del archivo en
   `scripts/adapters/gps/`. `"csv_generico"` ya funciona sin configurar nada
-  más (ver ese archivo). Los demás (`catapult`, `kinexon`, `statsports`,
-  `wimu`) son stubs: hay que completarlos cuando se sepa el proveedor real
-  del club y se tengan credenciales para probar.
+  más (ver ese archivo). `"catapult"` también está terminado (ver abajo).
+  Los demás (`kinexon`, `statsports`, `wimu`) son stubs: no encontramos
+  documentación pública de API confiable para ninguno de los tres — si el
+  club nuevo usa alguno, lo más rápido es arrancar con `csv_generico`
+  apuntando a lo que ese software exporte.
+
+### Catapult
+
+```json
+"fuentes": {
+  "gps": {
+    "adapter": "catapult",
+    "config": {
+      "equipos": { "Nombre del equipo en Catapult": "<categoria.id>" },
+      "soloPartidos": true
+    }
+  }
+}
+```
+
+El nombre del equipo se saca entrando a OpenField con la cuenta del club y
+mirando cómo están cargados los equipos ahí (tiene que ser texto idéntico).
+Las credenciales NUNCA van acá: se setean como variables de entorno
+`CATAPULT_EMAIL` / `CATAPULT_PASSWORD` donde corra `scripts/scrape_main.py`
+(secret de GitHub Actions, o variable de entorno en la PC del club — mismo
+patrón que ya usa Tigre con sus credenciales de futdetail).
 
 # `firebase.js` — credenciales reales (no va a git)
 
