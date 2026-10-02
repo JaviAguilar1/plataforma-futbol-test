@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="pageTitle">Seguimiento de Club</title>
+<style>
+  :root{
+    --fondo:#0b0f17;
+    --superficie:#121826;
+    --primario:#d4af37;
+    --texto:#eef1f6;
+    --borde:#273047;
+    --rojo:#e5484d;
+    --verde:#3ddc84;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--fondo);
+    color:var(--texto);
+    font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+  }
+  header{
+    display:flex;align-items:center;gap:12px;
+    padding:14px 20px;background:var(--superficie);
+    border-bottom:2px solid var(--primario);
+  }
+  header img{height:40px;}
+  header h1{font-size:1.2rem;margin:0;flex:1;}
+  nav{display:flex;gap:8px;flex-wrap:wrap;padding:10px 20px;background:var(--superficie);}
+  nav button{
+    background:none;border:1px solid var(--borde);color:var(--texto);
+    padding:8px 14px;border-radius:6px;cursor:pointer;font-size:.9rem;
+  }
+  nav button.activo{background:var(--primario);color:#1a1a1a;border-color:var(--primario);font-weight:600;}
+  main{padding:20px;max-width:1100px;margin:0 auto;}
+  select,input,textarea{
+    background:var(--fondo);color:var(--texto);border:1px solid var(--borde);
+    border-radius:4px;padding:6px 8px;font-size:.9rem;
+  }
+  button.accion{
+    background:var(--primario);color:#1a1a1a;border:none;border-radius:4px;
+    padding:7px 14px;cursor:pointer;font-weight:600;
+  }
+  button.secundario{
+    background:none;border:1px solid var(--borde);color:var(--texto);
+    border-radius:4px;padding:7px 12px;cursor:pointer;
+  }
+  button.peligro{background:var(--rojo);color:#fff;border:none;border-radius:4px;padding:5px 10px;cursor:pointer;}
+  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:.88rem;}
+  th,td{padding:7px 8px;border-bottom:1px solid var(--borde);text-align:left;}
+  th{color:var(--primario);}
+  .card{background:var(--superficie);border:1px solid var(--borde);border-radius:8px;padding:16px;margin-bottom:18px;}
+  .fila-form{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center;}
+  .fila-form > *{flex:1;min-width:110px;}
+  .oculto{display:none !important;}
+  .aviso{background:#2a2110;border:1px solid var(--primario);border-radius:6px;padding:12px;margin-bottom:14px;font-size:.9rem;}
+  .login-box{max-width:340px;margin:60px auto;text-align:center;}
+  .login-box input{width:100%;margin-bottom:10px;}
+  .tag-rol{font-size:.75rem;background:var(--primario);color:#1a1a1a;padding:2px 8px;border-radius:10px;}
+  footer{text-align:center;color:#687089;font-size:.78rem;padding:30px 10px;}
+</style>
+</head>
+<body>
+
+<header>
+  <img id="escudo" class="oculto">
+  <h1 id="nombreClub">Cargando...</h1>
+  <span id="estadoSesion"></span>
+</header>
+
+<nav id="nav">
+  <button data-vista="plantel" class="activo">Plantel</button>
+  <button data-vista="partidos">Partidos</button>
+  <button data-vista="tabla">Tabla de posiciones</button>
+</nav>
+
+<main>
+  <div id="avisoConfig" class="aviso oculto"></div>
+
+  <div class="fila-form oculto" id="selectorCategoriaWrap">
+    <label style="flex:none;">Categoría</label>
+    <select id="selectorCategoria"></select>
+  </div>
+
+  <section id="vistaPlantel"></section>
+  <section id="vistaPartidos" class="oculto"></section>
+  <section id="vistaTabla" class="oculto"></section>
+
+  <div id="vistaLogin" class="login-box oculto">
+    <h2>Ingresar</h2>
+    <input id="loginEmail" type="email" placeholder="Email">
+    <input id="loginPass" type="password" placeholder="Contraseña">
+    <button class="accion" onclick="hacerLogin()">Ingresar</button>
+    <p id="loginError" style="color:var(--rojo);font-size:.85rem;"></p>
+  </div>
+</main>
+
+<footer>Plantilla genérica de seguimiento de club — instancia propia, sin datos compartidos con otros clubes.</footer>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="config/firebase.js" onerror="window.FIREBASE_CONFIG_FALTA=true"></script>
+<script>
+let CLUB = null;
+let db = null;
+let auth = null;
+let usuario = null;
+let rolActual = null;
+let categoriaActual = null;
+let vistaActual = 'plantel';
+
+async function cargarConfigClub(){
+  try{
+    const r = await fetch('config/club.json', {cache:'no-store'});
+    if(r.ok) return await r.json();
+  }catch(e){}
+  const rEj = await fetch('config/club.example.json', {cache:'no-store'});
+  return await rEj.json();
+}
+
+function aplicarTema(club){
+  const c = club.club.colores || {};
+  const root = document.documentElement.style;
+  if(c.fondo) root.setProperty('--fondo', c.fondo);
+  if(c.superficie) root.setProperty('--superficie', c.superficie);
+  if(c.primario) root.setProperty('--primario', c.primario);
+  if(c.texto) root.setProperty('--texto', c.texto);
+  document.getElementById('pageTitle').textContent = club.club.nombre;
+  document.getElementById('nombreClub').textContent = club.club.nombre;
+  if(club.club.escudoUrl){
+    const img = document.getElementById('escudo');
+    img.src = club.club.escudoUrl;
+    img.classList.remove('oculto');
+  }
+}
+
+function poblarSelectorCategoria(){
+  const sel = document.getElementById('selectorCategoria');
+  sel.innerHTML = '';
+  CLUB.temporada.categorias.forEach(cat=>{
+    const op = document.createElement('option');
+    op.value = cat.id; op.textContent = cat.nombre;
+    sel.appendChild(op);
+  });
+  categoriaActual = CLUB.temporada.categorias[0]?.id || null;
+  sel.value = categoriaActual;
+  sel.onchange = ()=>{ categoriaActual = sel.value; renderVistaActual(); };
+  document.getElementById('selectorCategoriaWrap').classList.remove('oculto');
+}
+
+function puedeEditar(){
+  return !!rolActual && CLUB.roles.includes(rolActual);
+}
+
+function esAdmin(){
+  return rolActual === CLUB.roles[0];
+}
+
+// ---------- Auth ----------
+function hacerLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  document.getElementById('loginError').textContent = '';
+  auth.signInWithEmailAndPassword(email, pass).catch(err=>{
+    document.getElementById('loginError').textContent = 'No se pudo ingresar: ' + err.message;
+  });
+}
+function hacerLogout(){ auth.signOut(); }
+
+function onAuthCambio(user){
+  usuario = user;
+  if(!user){
+    rolActual = null;
+    actualizarEstadoSesion();
+    renderVistaActual();
+    return;
+  }
+  db.ref('users/'+user.uid+'/role').once('value').then(snap=>{
+    rolActual = snap.val();
+    actualizarEstadoSesion();
+    renderVistaActual();
+  });
+}
+
+function actualizarEstadoSesion(){
+  const el = document.getElementById('estadoSesion');
+  if(usuario){
+    el.innerHTML = (rolActual ? `<span class="tag-rol">${rolActual}</span> ` : '')
+      + usuario.email + ' <button class="secundario" onclick="hacerLogout()">Salir</button>';
+  } else {
+    el.innerHTML = '<button class="secundario" onclick="mostrarLogin()">Ingresar</button>';
+  }
+}
+
+function mostrarLogin(){
+  document.querySelectorAll('main > section').forEach(s=>s.classList.add('oculto'));
+  document.getElementById('selectorCategoriaWrap').classList.add('oculto');
+  document.getElementById('vistaLogin').classList.remove('oculto');
+}
+
+// ---------- Navegación ----------
+document.getElementById('nav').addEventListener('click', e=>{
+  const btn = e.target.closest('button[data-vista]');
+  if(!btn) return;
+  vistaActual = btn.dataset.vista;
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('activo', b===btn));
+  document.getElementById('vistaLogin').classList.add('oculto');
+  document.getElementById('selectorCategoriaWrap').classList.remove('oculto');
+  renderVistaActual();
+});
+
+function renderVistaActual(){
+  document.getElementById('vistaPlantel').classList.add('oculto');
+  document.getElementById('vistaPartidos').classList.add('oculto');
+  document.getElementById('vistaTabla').classList.add('oculto');
+  if(vistaActual==='plantel') renderPlantel();
+  if(vistaActual==='partidos') renderPartidos();
+  if(vistaActual==='tabla') renderTabla();
+}
+
+// ---------- Plantel ----------
+function renderPlantel(){
+  const sec = document.getElementById('vistaPlantel');
+  sec.classList.remove('oculto');
+  if(!categoriaActual){ sec.innerHTML = '<p>No hay categorías configuradas.</p>'; return; }
+  if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver y cargar datos.</p>'; return; }
+  db.ref('plantel/'+categoriaActual).off();
+  db.ref('plantel/'+categoriaActual).on('value', snap=>{
+    const datos = snap.val() || {};
+    sec.innerHTML = plantelHTML(datos);
+  });
+}
+
+function plantelHTML(datos){
+  const opcionesPos = CLUB.posiciones.map(p=>`<option value="${p.codigo}">${p.nombre}</option>`).join('');
+  const filas = Object.entries(datos).map(([id,j])=>`
+    <tr>
+      <td>${j.apellido||''}, ${j.nombre||''}</td>
+      <td>${nombrePosicion(j.posicion)}</td>
+      <td>${j.fechaNacimiento||''}</td>
+      <td>${j.pieHabil||''}</td>
+      <td>${j.altura||''}</td>
+      <td>${j.peso||''}</td>
+      ${puedeEditar()?`<td><button class="peligro" onclick="borrarJugador('${id}')">Borrar</button></td>`:''}
+    </tr>`).join('');
+  return `
+  <div class="card">
+    <h2>Plantel</h2>
+    ${puedeEditar()?`
+    <div class="fila-form">
+      <input id="pNombre" placeholder="Nombre">
+      <input id="pApellido" placeholder="Apellido">
+      <select id="pPosicion">${opcionesPos}</select>
+      <input id="pFechaNac" type="date">
+      <select id="pPieHabil"><option value="Derecho">Derecho</option><option value="Izquierdo">Izquierdo</option><option value="Ambos">Ambos</option></select>
+      <input id="pAltura" type="number" placeholder="Altura (cm)">
+      <input id="pPeso" type="number" placeholder="Peso (kg)">
+      <button class="accion" onclick="agregarJugador()">Agregar</button>
+    </div>`:''}
+    <table>
+      <thead><tr><th>Jugador</th><th>Posición</th><th>Nacimiento</th><th>Pie</th><th>Altura</th><th>Peso</th>${puedeEditar()?'<th></th>':''}</tr></thead>
+      <tbody>${filas || '<tr><td colspan="7">Sin jugadores cargados.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+
+function nombrePosicion(codigo){
+  const p = CLUB.posiciones.find(x=>x.codigo===codigo);
+  return p ? p.nombre : (codigo || '');
+}
+
+function agregarJugador(){
+  const j = {
+    nombre: document.getElementById('pNombre').value.trim(),
+    apellido: document.getElementById('pApellido').value.trim(),
+    posicion: document.getElementById('pPosicion').value,
+    fechaNacimiento: document.getElementById('pFechaNac').value,
+    pieHabil: document.getElementById('pPieHabil').value,
+    altura: document.getElementById('pAltura').value,
+    peso: document.getElementById('pPeso').value
+  };
+  if(!j.nombre || !j.apellido) return;
+  db.ref('plantel/'+categoriaActual).push(j);
+}
+
+function borrarJugador(id){
+  if(!confirm('¿Borrar jugador?')) return;
+  db.ref('plantel/'+categoriaActual+'/'+id).remove();
+}
+
+// ---------- Partidos / Resultados ----------
+function renderPartidos(){
+  const sec = document.getElementById('vistaPartidos');
+  sec.classList.remove('oculto');
+  if(!categoriaActual){ sec.innerHTML = '<p>No hay categorías configuradas.</p>'; return; }
+  if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver y cargar datos.</p>'; return; }
+  db.ref('partidos/'+categoriaActual).off();
+  db.ref('partidos/'+categoriaActual).on('value', snap=>{
+    const datos = snap.val() || {};
+    sec.innerHTML = partidosHTML(datos);
+  });
+}
+
+function partidosHTML(datos){
+  const filas = Object.entries(datos)
+    .sort((a,b)=> (+a[0]) - (+b[0]))
+    .map(([fecha,p])=>`
+    <tr>
+      <td>${fecha}</td>
+      <td>${p.rival||''}</td>
+      <td>${p.localia||''}</td>
+      <td>${p.golesFavor ?? ''} - ${p.golesContra ?? ''}</td>
+      <td>${p.resultado||''}</td>
+      ${puedeEditar()?`<td><button class="peligro" onclick="borrarPartido('${fecha}')">Borrar</button></td>`:''}
+    </tr>`).join('');
+  return `
+  <div class="card">
+    <h2>Partidos</h2>
+    ${puedeEditar()?`
+    <div class="fila-form">
+      <input id="mFecha" type="number" placeholder="Fecha Nro">
+      <input id="mRival" placeholder="Rival">
+      <select id="mLocalia"><option value="Local">Local</option><option value="Visitante">Visitante</option></select>
+      <input id="mGF" type="number" placeholder="Goles a favor">
+      <input id="mGC" type="number" placeholder="Goles en contra">
+      <select id="mResultado"><option>Victoria</option><option>Empate</option><option>Derrota</option></select>
+      <button class="accion" onclick="agregarPartido()">Agregar</button>
+    </div>`:''}
+    <table>
+      <thead><tr><th>Fecha</th><th>Rival</th><th>Condición</th><th>Goles</th><th>Resultado</th>${puedeEditar()?'<th></th>':''}</tr></thead>
+      <tbody>${filas || '<tr><td colspan="6">Sin partidos cargados.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+
+function agregarPartido(){
+  const fecha = document.getElementById('mFecha').value;
+  if(!fecha) return;
+  const p = {
+    rival: document.getElementById('mRival').value.trim(),
+    localia: document.getElementById('mLocalia').value,
+    golesFavor: Number(document.getElementById('mGF').value || 0),
+    golesContra: Number(document.getElementById('mGC').value || 0),
+    resultado: document.getElementById('mResultado').value
+  };
+  db.ref('partidos/'+categoriaActual+'/'+fecha).set(p);
+}
+
+function borrarPartido(fecha){
+  if(!confirm('¿Borrar partido?')) return;
+  db.ref('partidos/'+categoriaActual+'/'+fecha).remove();
+}
+
+// ---------- Tabla de posiciones (manual) ----------
+function renderTabla(){
+  const sec = document.getElementById('vistaTabla');
+  sec.classList.remove('oculto');
+  if(!categoriaActual){ sec.innerHTML = '<p>No hay categorías configuradas.</p>'; return; }
+  if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver y cargar datos.</p>'; return; }
+  const adapter = (CLUB.fuentes?.liga?.adapter) || 'manual';
+  db.ref('tablaPosiciones/'+categoriaActual).off();
+  db.ref('tablaPosiciones/'+categoriaActual).on('value', snap=>{
+    const filas = snap.val() || [];
+    sec.innerHTML = tablaHTML(filas, adapter);
+  });
+}
+
+function tablaHTML(filas, adapter){
+  const esManual = adapter === 'manual';
+  const cuerpo = filas.map((f,i)=>`
+    <tr>
+      <td>${f.pos ?? i+1}</td>
+      <td>${f.equipo||''}</td>
+      <td>${f.pj ?? ''}</td>
+      <td>${f.pg ?? ''}</td>
+      <td>${f.pe ?? ''}</td>
+      <td>${f.pp ?? ''}</td>
+      <td>${f.gf ?? ''}</td>
+      <td>${f.gc ?? ''}</td>
+      <td>${f.pts ?? ''}</td>
+      ${esManual && puedeEditar()?`<td><button class="peligro" onclick="borrarFilaTabla(${i})">Borrar</button></td>`:''}
+    </tr>`).join('');
+  return `
+  <div class="card">
+    <h2>Tabla de posiciones</h2>
+    ${esManual ? '' : `<p style="color:#9aa4bd;font-size:.85rem;">Esta tabla se actualiza sola desde la fuente de liga configurada (adaptador: <code>${adapter}</code>).</p>`}
+    ${esManual && puedeEditar()?`
+    <div class="fila-form">
+      <input id="tEquipo" placeholder="Equipo">
+      <input id="tPj" type="number" placeholder="PJ">
+      <input id="tPg" type="number" placeholder="PG">
+      <input id="tPe" type="number" placeholder="PE">
+      <input id="tPp" type="number" placeholder="PP">
+      <input id="tGf" type="number" placeholder="GF">
+      <input id="tGc" type="number" placeholder="GC">
+      <input id="tPts" type="number" placeholder="Pts">
+      <button class="accion" onclick="agregarFilaTabla()">Agregar</button>
+    </div>`:''}
+    <table>
+      <thead><tr><th>#</th><th>Equipo</th><th>PJ</th><th>PG</th><th>PE</th><th>PP</th><th>GF</th><th>GC</th><th>Pts</th>${esManual && puedeEditar()?'<th></th>':''}</tr></thead>
+      <tbody>${cuerpo || '<tr><td colspan="10">Sin datos cargados.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+
+function agregarFilaTabla(){
+  const fila = {
+    equipo: document.getElementById('tEquipo').value.trim(),
+    pj: Number(document.getElementById('tPj').value||0),
+    pg: Number(document.getElementById('tPg').value||0),
+    pe: Number(document.getElementById('tPe').value||0),
+    pp: Number(document.getElementById('tPp').value||0),
+    gf: Number(document.getElementById('tGf').value||0),
+    gc: Number(document.getElementById('tGc').value||0),
+    pts: Number(document.getElementById('tPts').value||0)
+  };
+  if(!fila.equipo) return;
+  const ref = db.ref('tablaPosiciones/'+categoriaActual);
+  ref.once('value').then(snap=>{
+    const actual = snap.val() || [];
+    actual.push(fila);
+    ref.set(actual);
+  });
+}
+
+function borrarFilaTabla(i){
+  if(!confirm('¿Borrar fila?')) return;
+  const ref = db.ref('tablaPosiciones/'+categoriaActual);
+  ref.once('value').then(snap=>{
+    const actual = snap.val() || [];
+    actual.splice(i,1);
+    ref.set(actual);
+  });
+}
+
+// ---------- Arranque ----------
+(async function init(){
+  CLUB = await cargarConfigClub();
+  aplicarTema(CLUB);
+  poblarSelectorCategoria();
+
+  if(window.FIREBASE_CONFIG_FALTA || !window.FIREBASE_CONFIG){
+    document.getElementById('avisoConfig').textContent =
+      'Falta config/firebase.js con las credenciales reales del club (ver config/README.md). Mostrando solo la config de ejemplo.';
+    document.getElementById('avisoConfig').classList.remove('oculto');
+    actualizarEstadoSesion();
+    renderVistaActual();
+    return;
+  }
+
+  firebase.initializeApp(window.FIREBASE_CONFIG);
+  db = firebase.database();
+  auth = firebase.auth();
+  auth.onAuthStateChanged(onAuthCambio);
+  renderVistaActual();
+})();
+</script>
+</body>
+</html>

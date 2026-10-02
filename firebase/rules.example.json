@@ -1,0 +1,22 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid && !data.exists()"
+      }
+    },
+    "plantel": {
+      ".read": true,
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
+    },
+    "partidos": {
+      ".read": true,
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
+    },
+    "tablaPosiciones": {
+      ".read": true,
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
+    }
+  }
+}

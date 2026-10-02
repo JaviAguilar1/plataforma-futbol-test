@@ -1,0 +1,61 @@
+{
+  "club": {
+    "nombre": "Club Ejemplo",
+    "nombreCorto": "EJ",
+    "escudoUrl": "",
+    "colores": {
+      "fondo": "#0b0f17",
+      "superficie": "#121826",
+      "primario": "#d4af37",
+      "texto": "#eef1f6"
+    }
+  },
+  "temporada": {
+    "anio": 2027,
+    "categorias": [
+      { "id": "CAT1", "nombre": "Cuarta", "duracionTiempoMin": 45, "esReserva": false },
+      { "id": "CAT2", "nombre": "Quinta", "duracionTiempoMin": 45, "esReserva": false },
+      { "id": "CAT3", "nombre": "Sexta", "duracionTiempoMin": 45, "esReserva": false },
+      {
+        "id": "RESERVA",
+        "nombre": "Reserva",
+        "duracionTiempoMin": 45,
+        "esReserva": true,
+        "semestres": ["S1", "S2"]
+      }
+    ]
+  },
+  "roles": ["admin", "editor", "lector"],
+  "posiciones": [
+    { "codigo": "ARQ", "nombre": "Arquero" },
+    { "codigo": "DEF-LI", "nombre": "Líbero" },
+    { "codigo": "DEF-CD", "nombre": "Central derecho" },
+    { "codigo": "DEF-CI", "nombre": "Central izquierdo" },
+    { "codigo": "DEF-LD", "nombre": "Lateral derecho" },
+    { "codigo": "DEF-LI2", "nombre": "Lateral izquierdo" },
+    { "codigo": "VOL-MM", "nombre": "Volante mixto" },
+    { "codigo": "VOL-MC", "nombre": "Mediocampista central" },
+    { "codigo": "VOL-ID", "nombre": "Interno derecho" },
+    { "codigo": "VOL-VD", "nombre": "Volante derecho" },
+    { "codigo": "VOL-VI", "nombre": "Volante izquierdo" },
+    { "codigo": "VOL-II", "nombre": "Interno izquierdo" },
+    { "codigo": "VOL-EN", "nombre": "Enganche" },
+    { "codigo": "DEL-EI", "nombre": "Extremo izquierdo" },
+    { "codigo": "DEL-ED", "nombre": "Extremo derecho" },
+    { "codigo": "DEL-SD", "nombre": "Segundo delantero" },
+    { "codigo": "DEL-CD", "nombre": "Centro delantero" }
+  ],
+  "linksPartido": [
+    "partido",
+    "resumen",
+    "analisisPropio",
+    "analisisRival",
+    "informePdf",
+    "gps",
+    "citacion"
+  ],
+  "fuentes": {
+    "liga": { "adapter": "manual", "config": {} },
+    "gps": { "adapter": "csv_generico", "config": {} }
+  }
+}
