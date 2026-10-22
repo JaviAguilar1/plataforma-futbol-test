@@ -77,6 +77,14 @@
   .res-G{background:var(--verde);} .res-E{background:#c9b458;} .res-P{background:var(--rojo);color:#fff;}
   td.celda-G{color:var(--verde);} td.celda-E{color:#c9b458;} td.celda-P{color:var(--rojo);}
   .nota{color:#9aa4bd;font-size:.82rem;margin:0 0 6px;}
+  .buscador{margin-left:auto;position:relative;min-width:220px;}
+  .buscador input{width:100%;}
+  #resultadosBusqueda{position:absolute;right:0;top:100%;margin-top:4px;z-index:20;background:var(--superficie);border:1px solid var(--borde);border-radius:6px;min-width:280px;max-height:340px;overflow:auto;}
+  #resultadosBusqueda button{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--borde);border-radius:0;color:var(--texto);padding:8px 10px;cursor:pointer;}
+  #resultadosBusqueda button:hover{background:var(--fondo);}
+  .estado{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.76rem;background:var(--borde);}
+  .estado-titular{background:var(--verde);color:#111;} .estado-entro{background:var(--primario);color:#111;} .estado-no-citado{background:#5a2326;}
+  td.mejor{color:var(--primario);font-weight:700;}
   #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--rojo);color:#fff;padding:10px 16px;border-radius:6px;z-index:10;max-width:90vw;font-size:.9rem;}
   @media (max-width:600px){ main{padding:12px;} header{padding:10px 12px;} nav{padding:8px 12px;} }
 </style>
@@ -100,6 +108,12 @@
   <button data-vista="recursos">Recursos</button>
   <button data-vista="reportes">Reportes</button>
   <button data-vista="usuarios" id="navUsuarios" class="oculto">Usuarios</button>
+  <div class="buscador">
+    <input id="buscadorJugador" placeholder="Buscar jugador..." autocomplete="off"
+      onfocus="cargarIndiceJugadores()" oninput="buscarJugador(this.value)"
+      onblur="setTimeout(()=>document.getElementById('resultadosBusqueda').classList.add('oculto'), 200)">
+    <div id="resultadosBusqueda" class="oculto"></div>
+  </div>
 </nav>
 
 <main>
@@ -667,9 +681,10 @@ function statsJugadores(convocatorias, partidos, competencia){
   Object.entries(convocatorias||{}).forEach(([fecha, conv])=>{
     if(competencia && (partidos?.[fecha]?.competencia || '') !== competencia) return;
     Object.entries(conv||{}).forEach(([jid,c])=>{
-      const x = st[jid] || (st[jid] = {jugador:'', conv:0, tit:0, min:0, goles:0, asist:0, ta:0, tr:0, dest:0});
+      const x = st[jid] || (st[jid] = {jugador:'', conv:0, jug:0, tit:0, min:0, goles:0, asist:0, ta:0, tr:0, dest:0});
       if(c.jugador) x.jugador = c.jugador;
       x.conv++; if(c.titular) x.tit++;
+      if(c.titular || (Number(c.minutos)||0) > 0) x.jug++;
       x.min += Number(c.minutos)||0; x.goles += Number(c.goles)||0; x.asist += Number(c.asistencias)||0;
       if(c.amarilla) x.ta++; if(c.roja) x.tr++; if(c.destacado) x.dest++;
     });
@@ -716,6 +731,42 @@ function situacionTarjetas(convocatorias, partidos, antesDeFecha){
 }
 
 const badge = x => x ? `<span class="res res-${x}">${x}</span>` : '';
+
+// ---------- Buscador de jugadores (todas las categorías visibles) ----------
+let _indiceJugadores = null;
+async function cargarIndiceJugadores(){
+  const pares = await Promise.all(categoriasVisibles().map(c=> dbRef('plantel/'+c.id).once('value').then(x=>[c.id, x.val() || {}])));
+  _indiceJugadores = pares.flatMap(([cat, pl])=> Object.entries(pl).map(([id, j])=>({id, cat, j})));
+  buscarJugador(document.getElementById('buscadorJugador').value);
+}
+function buscarJugador(texto){
+  const el = document.getElementById('resultadosBusqueda');
+  const q = sinAcentos(texto.trim());
+  if(!q || !_indiceJugadores){ el.classList.add('oculto'); return; }
+  const r = _indiceJugadores
+    .filter(x=> sinAcentos(`${nombreCompleto(x.j)} ${x.j.nombre||''} ${x.j.apellido||''}`).includes(q))
+    .sort((a,b)=> !!a.j.archivado - !!b.j.archivado || nombreCompleto(a.j).localeCompare(nombreCompleto(b.j)))
+    .slice(0, 12);
+  el.innerHTML = r.length
+    ? r.map(x=>`<button onmousedown="irAJugador('${x.cat}','${x.id}')">${esc(nombreCompleto(x.j))}
+        <span class="nota">· ${esc(nombreCategoria(x.cat))} · ${esc(nombrePosicion(x.j.posicion))}${x.j.archivado ? ' · archivado' : ''}</span></button>`).join('')
+    : '<div class="nota" style="padding:8px 10px;">Sin resultados</div>';
+  el.classList.remove('oculto');
+}
+function irAJugador(cat, id){
+  const x = (_indiceJugadores || []).find(y=> y.id === id && y.cat === cat);
+  document.getElementById('buscadorJugador').value = '';
+  document.getElementById('resultadosBusqueda').classList.add('oculto');
+  categoriaActual = cat;
+  document.getElementById('selectorCategoria').value = cat;
+  filtrosPlantel[cat] = {};
+  if(x?.j.archivado) mostrarArchivados[cat] = true;
+  fichaAbierta[cat] = id;
+  vistaActual = 'plantel';
+  document.querySelectorAll('#nav button[data-vista]').forEach(b=>b.classList.toggle('activo', b.dataset.vista === 'plantel'));
+  renderVistaActual();
+  setTimeout(()=> document.getElementById('historial_'+id)?.closest('.panel-anidado')?.scrollIntoView({behavior:'smooth', block:'start'}), 700);
+}
 
 // ---------- Inicio ----------
 let _refsInicio = [];
@@ -843,11 +894,14 @@ function estadisticasHTML(cat, partidos, convocatorias, plantel){
   const filaRes = (t,r)=>`<tr><td>${t}</td><td>${r.pj}</td><td>${r.g}</td><td>${r.e}</td><td>${r.p}</td><td>${r.gf}</td><td>${r.gc}</td><td>${r.gf-r.gc}</td><td>${r.pct}%</td></tr>`;
   const sistemas = {};
   lista.forEach(p=>{ if(p.sistemaTactico) sistemas[p.sistemaTactico] = (sistemas[p.sistemaTactico]||0) + 1; });
-  const filas = Object.entries(statsJugadores(convocatorias, partidos, comp))
+  const st = statsJugadores(convocatorias, partidos, comp);
+  const elegidos = (compararIds[cat] || []).filter(id=> st[id]);
+  const filas = Object.entries(st)
     .sort((a,b)=> b[1].tit-a[1].tit || b[1].min-a[1].min)
     .map(([jid,x])=>`<tr>
+      <td><input type="checkbox" class="chkComparar" value="${jid}" ${elegidos.includes(jid)?'checked':''}></td>
       <td>${esc(plantel[jid] ? nombreCompleto(plantel[jid]) : (x.jugador || '(fuera del plantel)'))}</td>
-      <td>${x.conv}</td><td>${x.tit}</td><td>${x.min}</td><td>${x.goles}</td><td>${x.asist}</td><td>${x.ta}</td><td>${x.tr}</td><td>${x.dest}</td>
+      <td>${x.conv}</td><td>${x.jug}</td><td>${x.tit}</td><td>${x.min}</td><td>${x.goles}</td><td>${x.asist}</td><td>${x.ta}</td><td>${x.tr}</td><td>${x.dest}</td>
     </tr>`).join('');
   return `
   <div class="card">
@@ -869,10 +923,49 @@ function estadisticasHTML(cat, partidos, convocatorias, plantel){
   </div>
   <div class="card">
     <h2>Estadísticas por jugador</h2>
-    <p class="nota">Sale de las convocatorias cargadas en cada partido.</p>
+    <p class="nota">Sale de las convocatorias cargadas en cada partido. Marcá dos o más para compararlos.</p>
     <table>
-      <thead><tr><th>Jugador</th><th>Convocatorias</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th><th>Destacado</th></tr></thead>
-      <tbody>${filas || '<tr><td colspan="9">Todavía no hay convocatorias cargadas.</td></tr>'}</tbody>
+      <thead><tr><th></th><th>Jugador</th><th>Convocatorias</th><th>Jugó</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th><th>Destacado</th></tr></thead>
+      <tbody>${filas || '<tr><td colspan="11">Todavía no hay convocatorias cargadas.</td></tr>'}</tbody>
+    </table>
+    ${filas ? '<button class="secundario" onclick="compararSeleccionados()" style="margin-top:10px;">Comparar marcados</button>' : ''}
+  </div>
+  ${elegidos.length >= 2 ? comparacionHTML(elegidos, st, plantel) : ''}`;
+}
+
+let compararIds = {}; // categoriaId -> ids marcados en Estadísticas
+function compararSeleccionados(){
+  compararIds[categoriaActual] = [...document.querySelectorAll('.chkComparar:checked')].map(e=>e.value);
+  if(compararIds[categoriaActual].length < 2){ mostrarToast('Marcá al menos dos jugadores para comparar.'); return; }
+  renderVistaActual();
+}
+
+// Lado a lado; en cada fila numérica se resalta el mejor valor.
+function comparacionHTML(ids, st, plantel){
+  const j = id => plantel[id] || {};
+  const por90 = (n, min) => min ? (n*90/min).toFixed(2) : '';
+  const filas = [
+    ['Posición', id=> esc(nombrePosicion(j(id).posicion))],
+    ['Edad', id=> edadDe(j(id).fechaNacimiento)],
+    ['Altura', id=> esc(j(id).altura)], ['Peso', id=> esc(j(id).peso)], ['Pie hábil', id=> esc(j(id).pieHabil)],
+    ['Convocatorias', id=> st[id].conv, true], ['Jugó', id=> st[id].jug, true], ['Titular', id=> st[id].tit, true],
+    ['Minutos', id=> st[id].min, true],
+    ['Minutos por partido jugado', id=> st[id].jug ? Math.round(st[id].min / st[id].jug) : '', true],
+    ['Goles', id=> st[id].goles, true], ['Asistencias', id=> st[id].asist, true],
+    ['Goles cada 90 min', id=> por90(st[id].goles, st[id].min), true],
+    ['Goles + asistencias cada 90 min', id=> por90(st[id].goles + st[id].asist, st[id].min), true],
+    ['Amarillas', id=> st[id].ta], ['Rojas', id=> st[id].tr], ['Destacado', id=> st[id].dest, true],
+  ];
+  return `
+  <div class="card">
+    <h2>Comparación</h2>
+    <table>
+      <thead><tr><th></th>${ids.map(id=>`<th>${esc(plantel[id] ? nombreCompleto(plantel[id]) : st[id].jugador)}</th>`).join('')}</tr></thead>
+      <tbody>${filas.map(([titulo, valor, resaltar])=>{
+        const vals = ids.map(valor);
+        const max = resaltar ? Math.max(...vals.map(Number).filter(v=>!isNaN(v))) : null;
+        return `<tr><td>${titulo}</td>${vals.map(v=>`<td${resaltar && v !== '' && Number(v) === max && max > 0 ? ' class="mejor"' : ''}>${v ?? ''}</td>`).join('')}</tr>`;
+      }).join('')}</tbody>
     </table>
   </div>`;
 }
@@ -1236,32 +1329,52 @@ function cargarHistorialJugador(id){
   });
 }
 
+// Estado del jugador en cada partido de su categoría (como la ficha de Tigre).
+function estadoEnFecha(p, conv, id){
+  if(p.resultado === 'No Disputado') return 'No disputado';
+  if(!desenlace(p)) return 'Por jugar';
+  if(!conv) return 'Sin convocatoria';
+  const c = conv[id];
+  if(!c) return 'No citado';
+  if(c.titular) return 'Titular';
+  return (Number(c.minutos)||0) > 0 ? 'Entró' : 'No ingresó';
+}
+
 function historialJugadorHTML(id, temporadas){
   const filas = [], resumen = {};
-  temporadas.forEach(({t, convs, partidos})=> Object.entries(convs).forEach(([cat, porFecha])=> Object.entries(porFecha||{}).forEach(([fecha, conv])=>{
-    const c = conv?.[id];
-    if(!c) return;
-    const p = partidos[cat]?.[fecha] || {};
-    filas.push({t, cat, fecha, p, c});
-    const k = `${t} · ${nombreCategoria(cat)} — ${p.competencia || 'Sin competencia'}`;
-    const x = resumen[k] || (resumen[k] = {conv:0, tit:0, min:0, goles:0, asist:0, ta:0, tr:0});
-    x.conv++; if(c.titular) x.tit++;
-    x.min += Number(c.minutos)||0; x.goles += Number(c.goles)||0; x.asist += Number(c.asistencias)||0;
-    if(c.amarilla) x.ta++; if(c.roja) x.tr++;
-  })));
-  if(!filas.length) return 'Todavía no figura en ninguna convocatoria.';
+  temporadas.forEach(({t, convs, partidos})=>{
+    // Categorías donde figura en alguna convocatoria de esa temporada, más la
+    // actual si es la temporada activa (para ver también donde no fue citado).
+    const cats = new Set(Object.keys(convs).filter(cat=> Object.values(convs[cat] || {}).some(conv=> conv?.[id])));
+    if(t === temporadaActiva && fichaAbierta[categoriaActual] === id) cats.add(categoriaActual);
+    cats.forEach(cat=> Object.entries(partidos[cat] || {}).forEach(([fecha, p])=>{
+      const conv = convs[cat]?.[fecha];
+      const c = conv?.[id];
+      const estado = estadoEnFecha(p, conv, id);
+      filas.push({t, cat, fecha, p, c: c || {}, estado});
+      const k = `${t} · ${nombreCategoria(cat)} — ${p.competencia || 'Sin competencia'}`;
+      const x = resumen[k] || (resumen[k] = {conv:0, jug:0, tit:0, noCit:0, min:0, goles:0, asist:0, ta:0, tr:0});
+      if(estado === 'No citado') x.noCit++;
+      if(!c) return;
+      x.conv++; if(c.titular) x.tit++;
+      if(estado === 'Titular' || estado === 'Entró') x.jug++;
+      x.min += Number(c.minutos)||0; x.goles += Number(c.goles)||0; x.asist += Number(c.asistencias)||0;
+      if(c.amarilla) x.ta++; if(c.roja) x.tr++;
+    }));
+  });
+  if(!filas.length) return 'Todavía no hay partidos de su categoría ni convocatorias donde figure.';
   filas.sort((a,b)=> b.t.localeCompare(a.t) || a.cat.localeCompare(b.cat) || (+a.fecha) - (+b.fecha));
   return `
     <table>
-      <thead><tr><th>Temporada · categoría / competencia</th><th>Conv.</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
-      <tbody>${Object.entries(resumen).map(([k,x])=>`<tr><td>${esc(k)}</td><td>${x.conv}</td><td>${x.tit}</td><td>${x.min}</td><td>${x.goles}</td><td>${x.asist}</td><td>${x.ta}</td><td>${x.tr}</td></tr>`).join('')}</tbody>
+      <thead><tr><th>Temporada · categoría / competencia</th><th>Conv.</th><th>Jugó</th><th>Titular</th><th>No citado</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
+      <tbody>${Object.entries(resumen).map(([k,x])=>`<tr><td>${esc(k)}</td><td>${x.conv}</td><td>${x.jug}</td><td>${x.tit}</td><td>${x.noCit}</td><td>${x.min}</td><td>${x.goles}</td><td>${x.asist}</td><td>${x.ta}</td><td>${x.tr}</td></tr>`).join('')}</tbody>
     </table>
     <table>
-      <thead><tr><th>Temporada</th><th>Categoría</th><th>Fecha</th><th>Rival</th><th>Resultado</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
-      <tbody>${filas.map(({t, cat, fecha, p, c})=>`<tr>
+      <thead><tr><th>Temporada</th><th>Categoría</th><th>Fecha</th><th>Rival</th><th>Resultado</th><th>Estado</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
+      <tbody>${filas.map(({t, cat, fecha, p, c, estado})=>`<tr>
         <td>${esc(t)}</td><td>${esc(nombreCategoria(cat))}</td><td>${fecha}${p.fechaPartido ? ' ('+esc(fechaCorta(p.fechaPartido))+')' : ''}</td><td>${esc(p.rival)}</td>
-        <td>${p.golesFavor ?? ''} - ${p.golesContra ?? ''} ${badge(desenlace(p))}</td><td>${c.titular?'Sí':''}</td><td>${c.minutos ?? ''}</td>
-        <td>${c.goles||''}</td><td>${c.asistencias||''}</td><td>${c.amarilla?'Sí':''}</td><td>${c.roja?'Sí':''}</td></tr>`).join('')}</tbody>
+        <td>${p.golesFavor ?? ''} - ${p.golesContra ?? ''} ${badge(desenlace(p))}</td><td><span class="estado estado-${sinAcentos(estado).replace(/ /g, '-')}">${estado}</span></td>
+        <td>${c.minutos ?? ''}</td><td>${c.goles||''}</td><td>${c.asistencias||''}</td><td>${c.amarilla?'Sí':''}</td><td>${c.roja?'Sí':''}</td></tr>`).join('')}</tbody>
     </table>`;
 }
 
