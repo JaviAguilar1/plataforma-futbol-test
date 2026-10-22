@@ -28,6 +28,45 @@ aparte, sin tocarse) para poder ofrecérsela a otro club en 2027.
 
 # Estado del proyecto
 
+**2026-10-22 — Privacidad y cuentas (traído de Tigre, generalizado).**
+- **Muro de ingreso**: sin cuenta aprobada no se ve nada (antes la lectura
+  era pública: DNI, contactos de padres y datos médicos de menores a la
+  vista de cualquiera con el link).
+- **Alta de cuentas**: "Crear cuenta" → elige su función → queda pendiente
+  (`users/<uid>/rolSolicitado`). Pestaña **Usuarios** (solo admin) con
+  contador de pendientes: aprobar (pudiendo cambiar el rol), rechazar,
+  cambiar rol, quitar acceso. La pantalla de la persona escucha su propia
+  cuenta y se habilita/deshabilita sola. "Olvidé mi contraseña" con el mail
+  de Firebase. Errores de login traducidos.
+- **Roles que solo ven su categoría**: campo `ve` en `club.json` (default
+  todas). Las vistas de todo el club (Inicio, Fixture, Reportes, historial)
+  leen categoría por categoría (`paresPorCategoria`), solo las visibles.
+- **Reglas con permisos por categoría reales**, no solo en pantalla: el
+  admin sincroniza `rolesConfig` desde `club.json` al entrar y las reglas
+  controlan `ve`/`edita` por `$cat`. El admin es el rol con id `admin`
+  (convención obligatoria: las reglas no pueden leer `club.json`). Reglas
+  generadas por `scripts/generar_reglas.py`.
+- **Agujero cerrado**: la regla vieja de `users/$uid` dejaba que cualquiera
+  que se creara una cuenta (el registro por email está abierto) se
+  escribiera `role: "admin"` a sí mismo. Además un rol "lector" podía
+  escribir por la API (las reglas solo pedían tener algún rol). Ahora solo
+  el admin escribe `role`, y escribir exige poder editar esa categoría.
+- Distinto de Tigre: allá los roles están escritos a mano dentro de las
+  reglas y la limitación por categoría es solo en pantalla.
+
+Probado contra Firebase real: sin sesión no se lee nada; admin entra y
+todas las vistas andan; cuenta nueva desde la UI → pendiente, sin poder
+leer nada ni asignarse admin (ni con `set` ni con `update`); el admin la ve
+en "Usuarios (1 pendiente)" y la aprueba como Staff Reserva (pidió Lector)
+→ solo ve Reserva (Inicio, selector, Fixture), lee y escribe Reserva, y la
+base le rechaza leer/escribir Cuarta, leer usuarios y cambiar la
+temporada; con la cuenta abierta, el admin le cambia el rol a Lector desde
+afuera (API) → la pantalla pasa sola a ver las 4 categorías sin botones de
+edición, y la base le rechaza escribir; le quita el acceso → pasa sola a
+"Pedir acceso" → lo pide de nuevo → "pendiente". Modo demo sin
+`firebase.js` sigue andando. La cuenta de prueba se borró al final. **Sin
+probar**: el mail de "Olvidé mi contraseña" (no se mandaron mails reales).
+
 **2026-10-22 — Datos por temporada (como futdetail).** Decisión de Javi:
 guardar por año. Partidos, convocatorias, tabla manual, recordatorios
 omitidos, entrenamientos y documentos van bajo `temporadas/<año>/<nodo>/...`

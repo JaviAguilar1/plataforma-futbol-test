@@ -57,7 +57,9 @@
   .oculto{display:none !important;}
   .aviso{background:#2a2110;border:1px solid var(--primario);border-radius:6px;padding:12px;margin-bottom:14px;font-size:.9rem;}
   .login-box{max-width:340px;margin:60px auto;text-align:center;}
-  .login-box input{width:100%;margin-bottom:10px;}
+  .login-box input, .login-box select{width:100%;margin-bottom:10px;}
+  .login-box p{font-size:.88rem;color:#9aa4bd;}
+  button.link{background:none;border:none;color:var(--primario);cursor:pointer;text-decoration:underline;font-size:.85rem;padding:4px;}
   .tag-rol{font-size:.75rem;background:var(--primario);color:#1a1a1a;padding:2px 8px;border-radius:10px;}
   footer{text-align:center;color:#687089;font-size:.78rem;padding:30px 10px;}
   textarea{width:100%;resize:vertical;}
@@ -87,7 +89,7 @@
   <span id="estadoSesion"></span>
 </header>
 
-<nav id="nav">
+<nav id="nav" class="oculto">
   <button data-vista="inicio" class="activo">Inicio</button>
   <button data-vista="plantel">Plantel</button>
   <button data-vista="partidos">Partidos</button>
@@ -97,6 +99,7 @@
   <button data-vista="confiabilidad" id="navConfiabilidad" class="oculto">Confiabilidad</button>
   <button data-vista="recursos">Recursos</button>
   <button data-vista="reportes">Reportes</button>
+  <button data-vista="usuarios" id="navUsuarios" class="oculto">Usuarios</button>
 </nav>
 
 <main>
@@ -108,23 +111,18 @@
   </div>
   <div id="avisoTemporada" class="aviso oculto"></div>
 
-  <section id="vistaInicio"></section>
+  <section id="vistaInicio" class="oculto"></section>
   <section id="vistaPlantel" class="oculto"></section>
   <section id="vistaPartidos" class="oculto"></section>
   <section id="vistaEstadisticas" class="oculto"></section>
   <section id="vistaFixture" class="oculto"></section>
   <section id="vistaReportes" class="oculto"></section>
+  <section id="vistaUsuarios" class="oculto"></section>
   <section id="vistaTabla" class="oculto"></section>
   <section id="vistaConfiabilidad" class="oculto"></section>
   <section id="vistaRecursos" class="oculto"></section>
 
-  <div id="vistaLogin" class="login-box oculto">
-    <h2>Ingresar</h2>
-    <input id="loginEmail" type="email" placeholder="Email">
-    <input id="loginPass" type="password" placeholder="Contraseña">
-    <button class="accion" onclick="hacerLogin()">Ingresar</button>
-    <p id="loginError" style="color:var(--rojo);font-size:.85rem;"></p>
-  </div>
+  <div id="muro" class="login-box"><p>Cargando...</p></div>
 </main>
 
 <div id="toast" class="oculto"></div>
@@ -322,24 +320,24 @@ function aplicarTema(club){
 
 function poblarSelectorCategoria(){
   const sel = document.getElementById('selectorCategoria');
-  sel.innerHTML = '';
-  CLUB.temporada.categorias.forEach(cat=>{
-    const op = document.createElement('option');
-    op.value = cat.id; op.textContent = cat.nombre;
-    sel.appendChild(op);
-  });
-  categoriaActual = CLUB.temporada.categorias[0]?.id || null;
+  const cats = categoriasVisibles();
+  sel.innerHTML = cats.map(c=>`<option value="${esc(c.id)}">${esc(c.nombre)}</option>`).join('');
+  if(!cats.some(c=>c.id===categoriaActual)) categoriaActual = cats[0]?.id || null;
   sel.value = categoriaActual;
   sel.onchange = ()=>{ categoriaActual = sel.value; renderVistaActual(); };
-  document.getElementById('selectorCategoriaWrap').classList.remove('oculto');
 }
 
 function rolDe(id){
   return (CLUB.roles || []).find(r => (typeof r === 'string' ? r : r.id) === id);
 }
 
+// El rol con id "admin" es el que administra usuarios y temporadas: las
+// reglas de Firebase lo reconocen por ese id (no pueden leer club.json).
+function esAdmin(){ return rolActual === 'admin'; }
+
 function puedeEditar(catId){
   if(!rolActual) return false;
+  if(esAdmin()) return true;
   const rol = rolDe(rolActual);
   if(!rol) return false;
   if(typeof rol === 'string') return true;
@@ -347,54 +345,264 @@ function puedeEditar(catId){
   return rol.categorias.includes(catId || categoriaActual);
 }
 
-function esAdmin(){
-  const primero = (CLUB.roles || [])[0];
-  if(!primero) return false;
-  return rolActual === (typeof primero === 'string' ? primero : primero.id);
+function puedeVer(catId){
+  if(!db) return true;
+  if(!rolActual) return false;
+  if(esAdmin()) return true;
+  const rol = rolDe(rolActual);
+  if(!rol) return false;
+  const ve = typeof rol === 'string' ? 'todas' : (rol.ve ?? 'todas');
+  return ve === 'todas' || ve.includes(catId);
+}
+
+function categoriasVisibles(){ return CLUB.temporada.categorias.filter(c=>puedeVer(c.id)); }
+
+// Las reglas solo dejan leer categoría por categoría (según el rol), nunca
+// un nodo entero: las vistas de todo el club arman {cat: datos} así.
+function paresPorCategoria(nodo, alCambiar){
+  const acum = {};
+  return categoriasVisibles().map(c=>[`${nodo}/${c.id}`, v=>{ acum[c.id] = v; alCambiar(acum); }]);
+}
+
+// Las reglas tampoco pueden leer club.json: el admin copia qué edita y qué ve
+// cada rol a rolesConfig cada vez que entra.
+async function sincronizarRolesConfig(){
+  const comoMapa = v => (v === undefined || v === 'todas') ? 'todas' : Object.fromEntries((v || []).map(c=>[c, true]));
+  const cfg = {};
+  (CLUB.roles || []).forEach(r=>{
+    cfg[typeof r === 'string' ? r : r.id] = typeof r === 'string'
+      ? {edita: 'todas', ve: 'todas'}
+      : {nombre: r.nombre || r.id, edita: comoMapa(r.categorias), ve: comoMapa(r.ve)};
+  });
+  await db.ref('rolesConfig').set(cfg);
 }
 
 // ---------- Auth ----------
+// Nada se ve sin una cuenta aprobada: la persona crea su cuenta, pide un rol
+// y queda pendiente hasta que el admin la aprueba en "Usuarios".
+let _refUsuario = null, _refPendientes = null;
+
+function rolesSolicitables(){
+  return (CLUB.roles || []).map(r=> typeof r === 'string' ? {id:r, nombre:r} : r).filter(r=>r.id !== 'admin');
+}
+
+function mostrarMuro(modo, mensaje){
+  apagarSuscripciones();
+  document.getElementById('nav').classList.add('oculto');
+  document.getElementById('selectorCategoriaWrap').classList.add('oculto');
+  document.getElementById('avisoTemporada').classList.add('oculto');
+  document.querySelectorAll('main > section').forEach(x=>x.classList.add('oculto'));
+  const opcionesRol = rolesSolicitables().map(r=>`<option value="${esc(r.id)}">${esc(r.nombre)}</option>`).join('');
+  const salir = '<button class="link" onclick="hacerLogout()">Salir</button>';
+  const html = {
+    login: `<h2>Ingresar</h2>
+      <input id="loginEmail" type="email" placeholder="Email">
+      <input id="loginPass" type="password" placeholder="Contraseña" onkeydown="if(event.key==='Enter') hacerLogin()">
+      <button class="accion" onclick="hacerLogin()">Ingresar</button>
+      <div><button class="link" onclick="mostrarMuro('registro')">Crear cuenta</button> · <button class="link" onclick="mostrarMuro('recuperar')">Olvidé mi contraseña</button></div>`,
+    registro: `<h2>Crear cuenta</h2>
+      <p>La cuenta queda pendiente hasta que el administrador del club la apruebe.</p>
+      <input id="regNombre" placeholder="Nombre y apellido">
+      <input id="regEmail" type="email" placeholder="Email">
+      <input id="regPass" type="password" placeholder="Contraseña (mínimo 6 caracteres)">
+      <select id="regRol">${opcionesRol}</select>
+      <button class="accion" onclick="crearCuenta()">Crear cuenta</button>
+      <div><button class="link" onclick="mostrarMuro('login')">Ya tengo cuenta</button></div>`,
+    recuperar: `<h2>Cambiar contraseña</h2>
+      <p>Te mandamos un mail con un link para elegir una contraseña nueva.</p>
+      <input id="recEmail" type="email" placeholder="Email">
+      <button class="accion" onclick="recuperarPassword()">Enviar mail</button>
+      <div><button class="link" onclick="mostrarMuro('login')">Volver</button></div>`,
+    pedirAcceso: `<h2>Pedir acceso</h2>
+      <p>Tu cuenta (${esc(usuario?.email)}) todavía no tiene acceso. Elegí tu función y el administrador la va a revisar.</p>
+      <input id="regNombre" placeholder="Nombre y apellido">
+      <select id="regRol">${opcionesRol}</select>
+      <button class="accion" onclick="pedirAcceso()">Pedir acceso</button>
+      <div>${salir}</div>`,
+    pendiente: `<h2>Cuenta pendiente</h2>
+      <p>Tu cuenta (${esc(usuario?.email)}) está esperando que el administrador la apruebe. Esta pantalla se actualiza sola cuando eso pase.</p>
+      <div>${salir}</div>`,
+    cargando: '<p>Cargando...</p>',
+  }[modo];
+  const muro = document.getElementById('muro');
+  muro.innerHTML = html + `<p id="muroMensaje" style="color:var(--rojo);">${esc(mensaje)}</p>`;
+  muro.classList.remove('oculto');
+  actualizarEstadoSesion();
+}
+
+function mensajeMuro(texto, ok){
+  const el = document.getElementById('muroMensaje');
+  el.textContent = texto;
+  el.style.color = ok ? 'var(--verde)' : 'var(--rojo)';
+}
+
+const ERRORES_AUTH = {
+  'auth/invalid-credential': 'Email o contraseña incorrectos.',
+  'auth/wrong-password': 'Email o contraseña incorrectos.',
+  'auth/user-not-found': 'Email o contraseña incorrectos.',
+  'auth/invalid-login-credentials': 'Email o contraseña incorrectos.',
+  'auth/email-already-in-use': 'Ya hay una cuenta con ese email: ingresá o pedí cambiar la contraseña.',
+  'auth/weak-password': 'La contraseña tiene que tener al menos 6 caracteres.',
+  'auth/invalid-email': 'El email no es válido.',
+  'auth/too-many-requests': 'Demasiados intentos. Esperá un rato y probá de nuevo.',
+};
+const textoErrorAuth = err => ERRORES_AUTH[err.code] || err.message;
+
 function hacerLogin(){
   const email = document.getElementById('loginEmail').value.trim();
   const pass = document.getElementById('loginPass').value;
-  document.getElementById('loginError').textContent = '';
-  auth.signInWithEmailAndPassword(email, pass).catch(err=>{
-    document.getElementById('loginError').textContent = 'No se pudo ingresar: ' + err.message;
+  if(!email || !pass){ mensajeMuro('Completá email y contraseña.'); return; }
+  auth.signInWithEmailAndPassword(email, pass).catch(err=> mensajeMuro(textoErrorAuth(err)));
+}
+
+async function crearCuenta(){
+  const nombre = document.getElementById('regNombre').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const pass = document.getElementById('regPass').value;
+  const rol = document.getElementById('regRol').value;
+  if(!nombre || !email || !pass){ mensajeMuro('Completá nombre, email y contraseña.'); return; }
+  try{
+    const cred = await auth.createUserWithEmailAndPassword(email, pass);
+    await guardarPedidoDeAcceso(cred.user, nombre, rol);
+  }catch(err){ mensajeMuro(textoErrorAuth(err)); }
+}
+
+function pedirAcceso(){
+  const nombre = document.getElementById('regNombre').value.trim();
+  if(!nombre){ mensajeMuro('Poné tu nombre y apellido.'); return; }
+  guardarPedidoDeAcceso(usuario, nombre, document.getElementById('regRol').value);
+}
+
+// Campo por campo: las reglas dejan que cada uno escriba estos datos de su
+// propia cuenta, pero nunca "role" (eso lo asigna solo el admin).
+function guardarPedidoDeAcceso(user, nombre, rol){
+  return db.ref('users/'+user.uid).update({
+    email: user.email, nombre, rolSolicitado: rol, solicitadoEl: new Date().toISOString(),
   });
 }
-function hacerLogout(){ auth.signOut(); }
+
+function recuperarPassword(){
+  const email = document.getElementById('recEmail').value.trim();
+  if(!email){ mensajeMuro('Poné tu email.'); return; }
+  auth.sendPasswordResetEmail(email)
+    .then(()=> mensajeMuro('Listo: si hay una cuenta con ese email, te llega un mail para cambiar la contraseña.', true))
+    .catch(err=> mensajeMuro(textoErrorAuth(err)));
+}
+
+function hacerLogout(){
+  apagarSuscripciones();
+  auth.signOut();
+}
 
 function onAuthCambio(user){
   usuario = user;
-  if(!user){
-    rolActual = null;
-    actualizarEstadoSesion();
-    renderVistaActual();
-    return;
-  }
-  dbRef('users/'+user.uid+'/role').once('value').then(snap=>{
-    rolActual = snap.val();
-    actualizarEstadoSesion();
-    renderVistaActual();
+  if(_refUsuario){ _refUsuario.off(); _refUsuario = null; }
+  if(_refPendientes){ _refPendientes.off(); _refPendientes = null; }
+  rolActual = null;
+  if(!user){ mostrarMuro('login'); return; }
+  mostrarMuro('cargando');
+  // Escucha la propia cuenta: cuando el admin la aprueba (o le cambia/quita el
+  // rol) la pantalla se actualiza sola, sin tener que volver a entrar.
+  _refUsuario = db.ref('users/'+user.uid);
+  _refUsuario.on('value', async snap=>{
+    const u = snap.val() || {};
+    const rol = u.role || null;
+    if(!rol){
+      rolActual = null;
+      mostrarMuro(u.rolSolicitado ? 'pendiente' : 'pedirAcceso');
+      return;
+    }
+    if(rol === rolActual) return;
+    rolActual = rol;
+    if(esAdmin()){
+      await sincronizarRolesConfig();
+      escucharPendientes();
+    }
+    await cargarTemporadas();
+    mostrarApp();
   });
+}
+
+function escucharPendientes(){
+  _refPendientes = db.ref('users');
+  _refPendientes.on('value', snap=>{
+    const n = Object.values(snap.val() || {}).filter(u=>!u.role && u.rolSolicitado).length;
+    document.getElementById('navUsuarios').textContent = n ? `Usuarios (${n} pendiente${n>1?'s':''})` : 'Usuarios';
+  });
+}
+
+function mostrarApp(){
+  document.getElementById('muro').classList.add('oculto');
+  document.getElementById('nav').classList.remove('oculto');
+  document.getElementById('navUsuarios').classList.toggle('oculto', !esAdmin());
+  if(vistaActual === 'usuarios' && !esAdmin()) vistaActual = 'inicio';
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('activo', b.dataset.vista===vistaActual));
+  poblarSelectorCategoria();
+  actualizarEstadoSesion();
+  renderVistaActual();
 }
 
 function actualizarEstadoSesion(){
   const el = document.getElementById('estadoSesion');
-  if(usuario){
-    const rol = rolActual ? rolDe(rolActual) : null;
-    const nombreRol = rol ? (typeof rol === 'string' ? rol : rol.nombre) : rolActual;
-    el.innerHTML = (rolActual ? `<span class="tag-rol">${esc(nombreRol)}</span> ` : '')
-      + usuario.email + ' <button class="secundario" onclick="hacerLogout()">Salir</button>';
-  } else {
-    el.innerHTML = '<button class="secundario" onclick="mostrarLogin()">Ingresar</button>';
-  }
+  if(!usuario){ el.innerHTML = ''; return; }
+  const rol = rolActual ? rolDe(rolActual) : null;
+  const nombreRol = rol ? (typeof rol === 'string' ? rol : rol.nombre) : rolActual;
+  el.innerHTML = (rolActual ? `<span class="tag-rol">${esc(nombreRol)}</span> ` : '')
+    + esc(usuario.email) + ' <button class="secundario" onclick="hacerLogout()">Salir</button>';
 }
 
-function mostrarLogin(){
-  document.querySelectorAll('main > section').forEach(s=>s.classList.add('oculto'));
-  document.getElementById('selectorCategoriaWrap').classList.add('oculto');
-  document.getElementById('vistaLogin').classList.remove('oculto');
+// ---------- Usuarios (solo admin) ----------
+let _refsUsuarios = [];
+function renderUsuarios(){
+  const sec = document.getElementById('vistaUsuarios');
+  sec.classList.remove('oculto');
+  if(!esAdmin()){ sec.innerHTML = '<p>Solo el administrador ve esta pantalla.</p>'; return; }
+  suscribirRefs(_refsUsuarios, [['users', v=>{ sec.innerHTML = usuariosHTML(v); }]]);
+}
+
+function usuariosHTML(users){
+  const roles = (CLUB.roles || []).map(r=> typeof r === 'string' ? {id:r, nombre:r} : r);
+  const estado = u => u.role ? 0 : (u.rolSolicitado ? -1 : 1);
+  const filas = Object.entries(users)
+    .sort((a,b)=> estado(a[1]) - estado(b[1]) || (a[1].nombre||'').localeCompare(b[1].nombre||''))
+    .map(([uid,u])=>{
+      const yo = uid === usuario.uid;
+      const sel = u.role || u.rolSolicitado || '';
+      const select = `<select id="rolUsuario_${uid}" ${yo?'disabled':''}>${roles.map(r=>`<option value="${esc(r.id)}" ${r.id===sel?'selected':''}>${esc(r.nombre)}</option>`).join('')}</select>`;
+      const txtEstado = u.role ? 'Activo' : (u.rolSolicitado ? `<b style="color:var(--primario);">Pendiente</b>` : 'Sin acceso');
+      const acciones = yo ? '<span class="nota">(sos vos)</span>'
+        : u.role ? `<button class="secundario" onclick="asignarRol('${uid}')">Guardar rol</button> <button class="peligro" onclick="quitarAcceso('${uid}')">Quitar acceso</button>`
+        : `<button class="accion" onclick="asignarRol('${uid}')">Aprobar</button> <button class="peligro" onclick="rechazarUsuario('${uid}')">Rechazar</button>`;
+      return `<tr>
+        <td>${esc(u.nombre)}</td><td>${esc(u.email)}</td><td>${txtEstado}</td>
+        <td>${select}${!u.role && u.rolSolicitado ? `<div class="nota">Pidió: ${esc(rolDe(u.rolSolicitado)?.nombre || u.rolSolicitado)}</div>` : ''}</td>
+        <td>${esc(fechaCorta((u.solicitadoEl||'').slice(0,10), true))}</td>
+        <td>${acciones}</td>
+      </tr>`;
+    }).join('');
+  return `
+  <div class="card">
+    <h2>Usuarios</h2>
+    <p class="nota">Las cuentas nuevas quedan pendientes hasta que las aprobás. Al aprobar podés cambiar el rol que pidieron. "Rechazar" borra el pedido (la persona puede volver a pedir acceso); para borrar la cuenta del todo, hacelo en la consola de Firebase → Authentication.</p>
+    <table>
+      <thead><tr><th>Nombre</th><th>Email</th><th>Estado</th><th>Rol</th><th>Pedido el</th><th></th></tr></thead>
+      <tbody>${filas || '<tr><td colspan="6">No hay usuarios.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+
+function asignarRol(uid){
+  const rol = document.getElementById('rolUsuario_'+uid).value;
+  if(rol === 'admin' && !confirm('¿Darle permisos de administrador (ve y edita todo, y maneja usuarios)?')) return;
+  db.ref('users/'+uid).update({role: rol, rolSolicitado: null});
+}
+function quitarAcceso(uid){
+  if(!confirm('¿Quitarle el acceso? No va a poder ver nada hasta que lo vuelvas a aprobar.')) return;
+  db.ref('users/'+uid+'/role').remove();
+}
+function rechazarUsuario(uid){
+  if(!confirm('¿Rechazar este pedido?')) return;
+  db.ref('users/'+uid).remove();
 }
 
 // ---------- Navegación ----------
@@ -403,17 +611,15 @@ document.getElementById('nav').addEventListener('click', e=>{
   if(!btn) return;
   vistaActual = btn.dataset.vista;
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('activo', b===btn));
-  document.getElementById('vistaLogin').classList.add('oculto');
-  document.getElementById('selectorCategoriaWrap').classList.remove('oculto');
   renderVistaActual();
 });
 
-const VISTAS_DE_TODO_EL_CLUB = ['fixture', 'reportes'];
-const VISTAS_SIN_TEMPORADA = ['plantel', 'reportes'];
+const VISTAS_DE_TODO_EL_CLUB = ['fixture', 'reportes', 'usuarios'];
+const VISTAS_SIN_TEMPORADA = ['plantel', 'reportes', 'usuarios'];
 function renderVistaActual(){
   apagarSuscripciones();
   document.querySelectorAll('main > section').forEach(s=>s.classList.add('oculto'));
-  document.getElementById('vistaLogin').classList.add('oculto');
+  document.getElementById('muro').classList.add('oculto');
   const sinTemporada = VISTAS_SIN_TEMPORADA.includes(vistaActual);
   const sinCategoria = VISTAS_DE_TODO_EL_CLUB.includes(vistaActual);
   document.getElementById('selectorCategoriaWrap').classList.toggle('oculto', sinTemporada && sinCategoria);
@@ -425,7 +631,7 @@ function renderVistaActual(){
   ({
     inicio: renderInicio, plantel: renderPlantel, partidos: renderPartidos, estadisticas: renderEstadisticas,
     fixture: renderFixture, tabla: renderTabla, confiabilidad: renderConfiabilidad, recursos: renderRecursos,
-    reportes: renderReportes,
+    reportes: renderReportes, usuarios: renderUsuarios,
   })[vistaActual]();
 }
 
@@ -482,7 +688,7 @@ function renderInicio(){
   if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver y cargar datos.</p>'; return; }
   const d = {plantel:{}, lesiones:{}, contratos:{}, partidos:{}, convocatorias:{}};
   const rerender = ()=>{ sec.innerHTML = inicioHTML(d); };
-  suscribirRefs(_refsInicio, Object.keys(d).map(k=>[k, v=>{ d[k]=v; rerender(); }]));
+  suscribirRefs(_refsInicio, Object.keys(d).flatMap(k=> paresPorCategoria(k, v=>{ d[k]=v; rerender(); })));
 }
 
 function inicioHTML(d){
@@ -627,7 +833,7 @@ function estadisticasHTML(cat, partidos, convocatorias, plantel){
 // las categorías que jugaron esa fecha (así se lee el fixture de juveniles AFA).
 let _refsFixture = [];
 function gruposFixture(){
-  const cats = CLUB.temporada.categorias;
+  const cats = categoriasVisibles();
   return [
     {id:'juveniles', nombre:'Juveniles', cats: cats.filter(c=>!c.esReserva)},
     {id:'reserva', nombre:'Reserva', cats: cats.filter(c=>c.esReserva)},
@@ -637,7 +843,7 @@ function renderFixture(){
   const sec = document.getElementById('vistaFixture');
   sec.classList.remove('oculto');
   if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver esto.</p>'; return; }
-  suscribirRefs(_refsFixture, [['partidos', v=>{ sec.innerHTML = fixtureHTML(v); }]]);
+  suscribirRefs(_refsFixture, paresPorCategoria('partidos', v=>{ sec.innerHTML = fixtureHTML(v); }));
 }
 function cambiarFixture(grupo, competencia){ fixtureGrupo = grupo; fixtureCompetencia = competencia; renderVistaActual(); }
 
@@ -698,7 +904,7 @@ function renderReportes(){
   sec.classList.remove('oculto');
   if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver esto.</p>'; return; }
   const d = {plantel:{}, contratos:{}, prestamos:{}};
-  suscribirRefs(_refsReportes, Object.keys(d).map(k=>[k, v=>{ d[k]=v; sec.innerHTML = reportesHTML(d); }]));
+  suscribirRefs(_refsReportes, Object.keys(d).flatMap(k=> paresPorCategoria(k, v=>{ d[k]=v; sec.innerHTML = reportesHTML(d); })));
 }
 function cambiarFiltroReporte(campo, valor){ filtrosReportes[campo] = valor; renderVistaActual(); }
 
@@ -832,7 +1038,7 @@ function plantelHTML(datosCompletos){
       </td>
     </tr>${filaExtra}`;
   }).join('');
-  const otrasCats = CLUB.temporada.categorias.filter(c=>c.id!==cat);
+  const otrasCats = CLUB.temporada.categorias.filter(c=>c.id!==cat && puedeEditar(c.id));
   return `
   <div class="card">
     <h2>Plantel</h2>
@@ -973,7 +1179,8 @@ function fichaExtraHTML(id, j){
 // Recorre las convocatorias de TODAS las categorías: un jugador que pasó de
 // categoría conserva su historial completo (el id no cambia con el pase).
 function cargarHistorialJugador(id){
-  const leer = (t, nodo) => db.ref(`temporadas/${t}/${nodo}`).once('value').then(s=>s.val()||{});
+  const leer = (t, nodo) => Promise.all(categoriasVisibles().map(c=>
+    db.ref(`temporadas/${t}/${nodo}/${c.id}`).once('value').then(s=>[c.id, s.val()||{}]))).then(Object.fromEntries);
   Promise.all(temporadasLista.map(t=> Promise.all([leer(t, 'convocatorias'), leer(t, 'partidos')]))).then(porTemporada=>{
     const el = document.getElementById('historial_'+id);
     if(el) el.innerHTML = historialJugadorHTML(id, temporadasLista.map((t,i)=>({t, convs: porTemporada[i][0], partidos: porTemporada[i][1]})));
@@ -2131,17 +2338,18 @@ function borrarEntrenamiento(id){
 (async function init(){
   CLUB = await cargarConfigClub();
   aplicarTema(CLUB);
-  poblarSelectorCategoria();
   if((CLUB.fuentes?.liga?.adapter || 'manual') !== 'manual'){
     document.getElementById('navConfiabilidad').classList.remove('oculto');
   }
 
   if(window.FIREBASE_CONFIG_FALTA || !window.FIREBASE_CONFIG){
     await cargarTemporadas();
+    document.getElementById('muro').classList.add('oculto');
+    document.getElementById('nav').classList.remove('oculto');
     document.getElementById('avisoConfig').textContent =
       'Falta config/firebase.js con las credenciales reales del club (ver config/README.md). Mostrando solo la config de ejemplo.';
     document.getElementById('avisoConfig').classList.remove('oculto');
-    actualizarEstadoSesion();
+    poblarSelectorCategoria();
     renderVistaActual();
     return;
   }
@@ -2149,9 +2357,7 @@ function borrarEntrenamiento(id){
   firebase.initializeApp(window.FIREBASE_CONFIG);
   db = firebase.database();
   auth = firebase.auth();
-  await cargarTemporadas();
   auth.onAuthStateChanged(onAuthCambio);
-  renderVistaActual();
 })();
 </script>
 </body>

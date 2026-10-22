@@ -19,17 +19,28 @@ Copiá `club.example.json` a `club.json` y completá:
   Tigre). `esReserva` + `semestres` es para categorías que juegan por
   semestre en vez de por fecha de temporada completa (ajustá o sacá si el
   club nuevo no tiene ese caso).
-- **roles**: lista de roles que puede tener un usuario logueado. Cada uno es
-  `{ "id": "...", "nombre": "...", "categorias": "todas" | ["CAT1","CAT2"] | [] }`.
-  `id` es lo que se guarda en `users/<uid>/role` (asignado a mano desde la
-  consola de Firebase, no hay pantalla para esto — mismo criterio que Tigre);
-  `nombre` es lo que se muestra; `categorias` define qué puede EDITAR ese rol
-  (`"todas"`, una lista de `categoria.id`, o `[]` para un rol de solo
-  lectura). El primero de la lista es el único que cuenta como "admin"
-  (`esAdmin()` en `index.html` — hoy no hay ninguna acción que dependa de
-  eso, queda para cuando haga falta distinguir "puede editar" de "puede
-  administrar usuarios"). Sirve para dar de alta, por ejemplo, un staff que
-  solo tiene que tocar una categoría (ver `"staffReserva"` en el ejemplo).
+- **roles**: lista de roles que puede tener un usuario. Cada uno es
+  `{ "id": "...", "nombre": "...", "categorias": ..., "ve": ... }`:
+  - `categorias`: qué categorías puede EDITAR (`"todas"`, una lista de
+    `categoria.id`, o `[]` para solo lectura).
+  - `ve`: qué categorías puede VER (mismo formato; si no está, ve todas).
+    Ej.: `"staffReserva"` ve y edita solo Reserva.
+  - **Tiene que haber un rol con id `"admin"`**: es el que aprueba usuarios,
+    inicia temporadas y ve/edita todo. Las reglas de Firebase lo reconocen
+    por ese id.
+  - Las reglas de Firebase no pueden leer este archivo: cada vez que el
+    admin entra a la app, se copian los permisos de cada rol al nodo
+    `rolesConfig` de la base, y las reglas controlan con eso categoría por
+    categoría. **Después de cambiar roles acá, el admin tiene que entrar
+    una vez** para que la base se entere.
+
+  **Cuentas:** sin cuenta aprobada no se ve nada. La persona entra a la app,
+  toca "Crear cuenta", elige su función y queda pendiente; el admin la
+  aprueba (o le cambia el rol, o la rechaza) en la pestaña "Usuarios", que
+  muestra cuántas hay pendientes. La pantalla de la persona se habilita sola
+  al aprobarla. **El primer admin** se crea a mano una sola vez: crear la
+  cuenta desde la app y, en la consola de Firebase → Realtime Database,
+  agregar `users/<uid>/role` = `"admin"`.
 - **posiciones**: catálogo de posiciones para la ficha de jugador. El default
   salió de relevar un sistema real de gestión de clubes (futdetail), es un
   catálogo estándar de fútbol — no hace falta tocarlo salvo que el club use
@@ -181,7 +192,11 @@ la consola de Firebase para el proyecto de ESE club.
 # Reglas de seguridad de Firebase
 
 `firebase/rules.example.json` se pega a mano en la consola de Firebase
-(Realtime Database → Reglas → Publicar). **Cada vez que se actualiza
+(Realtime Database → Reglas → Publicar). No se edita a mano: lo genera
+`python scripts/generar_reglas.py` (la condición "este rol puede ver /
+editar esta categoría" se repite en cada nodo). Nada se puede leer sin un rol
+aprobado, cada rol ve y edita solo sus categorías, y nadie puede asignarse un
+rol a sí mismo (solo el admin escribe `role`). **Cada vez que se actualiza
 `index.html` a una versión que suma un nodo nuevo** (ej. `informes`), hay que
 volver a publicar las reglas: sin la regla, Firebase rechaza la lectura y la
 escritura de ese nodo (la app lo avisa con un cartel rojo abajo, y acciones

@@ -28,7 +28,7 @@
   "roles": [
     { "id": "admin", "nombre": "Administrador", "categorias": "todas" },
     { "id": "editor", "nombre": "Editor", "categorias": "todas" },
-    { "id": "staffReserva", "nombre": "Staff Reserva", "categorias": ["RESERVA"] },
+    { "id": "staffReserva", "nombre": "Staff Reserva", "categorias": ["RESERVA"], "ve": ["RESERVA"] },
     { "id": "lector", "nombre": "Lector", "categorias": [] }
   ],
   "posiciones": [
