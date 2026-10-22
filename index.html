@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#121826">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <title id="pageTitle">Seguimiento de Club</title>
 <style>
   :root{
@@ -77,6 +80,15 @@
   .res-G{background:var(--verde);} .res-E{background:#c9b458;} .res-P{background:var(--rojo);color:#fff;}
   td.celda-G{color:var(--verde);} td.celda-E{color:#c9b458;} td.celda-P{color:var(--rojo);}
   .nota{color:#9aa4bd;font-size:.82rem;margin:0 0 6px;}
+  .buscador{margin-left:auto;position:relative;min-width:220px;}
+  .buscador input{width:100%;}
+  #resultadosBusqueda{position:absolute;right:0;top:100%;margin-top:4px;z-index:20;background:var(--superficie);border:1px solid var(--borde);border-radius:6px;min-width:280px;max-height:340px;overflow:auto;}
+  #resultadosBusqueda button{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--borde);border-radius:0;color:var(--texto);padding:8px 10px;cursor:pointer;}
+  #resultadosBusqueda button:hover{background:var(--fondo);}
+  .estado{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.76rem;background:var(--borde);}
+  .estado-titular{background:var(--verde);color:#111;} .estado-entro{background:var(--primario);color:#111;} .estado-no-citado{background:#5a2326;}
+  td.mejor{color:var(--primario);font-weight:700;}
+  #avisoSinConexion{position:fixed;left:0;right:0;bottom:0;z-index:9;background:#7a5a08;color:#fff;text-align:center;padding:7px 12px;font-size:.85rem;}
   #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--rojo);color:#fff;padding:10px 16px;border-radius:6px;z-index:10;max-width:90vw;font-size:.9rem;}
   @media (max-width:600px){ main{padding:12px;} header{padding:10px 12px;} nav{padding:8px 12px;} }
 </style>
@@ -94,12 +106,19 @@
   <button data-vista="plantel">Plantel</button>
   <button data-vista="partidos">Partidos</button>
   <button data-vista="estadisticas">Estadísticas</button>
+  <button data-vista="gps">GPS</button>
   <button data-vista="fixture">Fixture general</button>
   <button data-vista="tabla">Tabla de posiciones</button>
   <button data-vista="confiabilidad" id="navConfiabilidad" class="oculto">Confiabilidad</button>
   <button data-vista="recursos">Recursos</button>
   <button data-vista="reportes">Reportes</button>
   <button data-vista="usuarios" id="navUsuarios" class="oculto">Usuarios</button>
+  <div class="buscador">
+    <input id="buscadorJugador" placeholder="Buscar jugador..." autocomplete="off"
+      onfocus="cargarIndiceJugadores()" oninput="buscarJugador(this.value)"
+      onblur="setTimeout(()=>document.getElementById('resultadosBusqueda').classList.add('oculto'), 200)">
+    <div id="resultadosBusqueda" class="oculto"></div>
+  </div>
 </nav>
 
 <main>
@@ -115,6 +134,7 @@
   <section id="vistaPlantel" class="oculto"></section>
   <section id="vistaPartidos" class="oculto"></section>
   <section id="vistaEstadisticas" class="oculto"></section>
+  <section id="vistaGps" class="oculto"><div id="gpsImport"></div><div id="gpsDatos"></div></section>
   <section id="vistaFixture" class="oculto"></section>
   <section id="vistaReportes" class="oculto"></section>
   <section id="vistaUsuarios" class="oculto"></section>
@@ -126,6 +146,7 @@
 </main>
 
 <div id="toast" class="oculto"></div>
+<div id="avisoSinConexion" class="oculto">Sin conexión: se muestra lo último guardado en este dispositivo. Lo que cargues se guarda cuando vuelva la señal (sin cerrar la app).</div>
 <footer>Plantilla genérica de seguimiento de club — instancia propia, sin datos compartidos con otros clubes.</footer>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -180,7 +201,7 @@ const NODOS_POR_JUGADOR = ['lesiones', 'contratos', 'prestamos', 'multimedia', '
 // Lo que es de una temporada (como en futdetail) se guarda bajo
 // temporadas/<año>/...; el plantel y lo del jugador (médico, contratos,
 // préstamos, multimedia, informes) es del club y no cambia de año.
-const NODOS_DE_TEMPORADA = ['partidos', 'convocatorias', 'tablaPosiciones', 'recordatoriosOmitidos', 'entrenamientos', 'documentos'];
+const NODOS_DE_TEMPORADA = ['partidos', 'convocatorias', 'tablaPosiciones', 'recordatoriosOmitidos', 'entrenamientos', 'documentos', 'gps'];
 let temporadaActiva = null;  // la vigente del club (temporadasInfo/activa)
 let temporadaActual = null;  // la que se está mirando
 let temporadasLista = [];
@@ -247,7 +268,7 @@ function rutaReal(ruta){
 function dbRef(ruta){ return db.ref(rutaReal(ruta)); }
 
 async function cargarTemporadas(){
-  const info = db ? ((await db.ref('temporadasInfo').once('value')).val() || {}) : {};
+  const info = db ? ((await leerUnaVez('temporadasInfo')) || {}) : {};
   temporadaActiva = String(info.activa || CLUB.temporada.anio || new Date().getFullYear());
   temporadasLista = [...new Set([temporadaActiva, ...Object.keys(info.lista || {})])].sort().reverse();
   temporadaActual = temporadaActiva;
@@ -281,15 +302,55 @@ function temporadaAdminHTML(){
   </div>`;
 }
 
+// ---------- Copia local (para abrir la app sin señal) ----------
+// Cada dato que la app escucha se guarda en el dispositivo (IndexedDB) y se
+// muestra al instante la próxima vez, hasta que llega lo de Firebase. Va por
+// usuario y se borra al cerrar sesión: incluye datos médicos.
+let conectado = false;
+let _idb = null;
+function abrirCache(){
+  return _idb || (_idb = new Promise((res, rej)=>{
+    const r = indexedDB.open('plataforma-cache', 1);
+    r.onupgradeneeded = ()=> r.result.createObjectStore('kv');
+    r.onsuccess = ()=> res(r.result);
+    r.onerror = ()=> rej(r.error);
+  }));
+}
+const claveCache = ruta => (usuario?.uid || '-') + ':' + ruta;
+async function cacheGuardar(ruta, v){
+  try{ (await abrirCache()).transaction('kv', 'readwrite').objectStore('kv').put({v, ts: Date.now()}, claveCache(ruta)); }catch(e){}
+}
+async function cacheLeer(ruta){
+  try{
+    const d = await abrirCache();
+    return await new Promise(res=>{ const r = d.transaction('kv').objectStore('kv').get(claveCache(ruta)); r.onsuccess = ()=> res(r.result || null); r.onerror = ()=> res(null); });
+  }catch(e){ return null; }
+}
+async function cacheBorrarTodo(){
+  try{ (await abrirCache()).transaction('kv', 'readwrite').objectStore('kv').clear(); }catch(e){}
+}
+// Lectura de una sola vez que no se cuelga sin señal: usa la copia local si
+// Firebase no contesta.
+function leerUnaVez(ruta){
+  return new Promise(res=>{
+    let listo = false;
+    db.ref(ruta).once('value').then(x=>{ if(listo) return; listo = true; cacheGuardar(ruta, x.val()); res(x.val()); }, ()=>{});
+    cacheLeer(ruta).then(c=> setTimeout(()=>{ if(!listo){ listo = true; res(c ? c.v : null); } }, conectado ? 5000 : 1500));
+  });
+}
+
 function suscribirRefs(listaRefs, pares){
   _listasRefs.add(listaRefs);
   listaRefs.forEach(r=>r.ref.off('value', r.cb));
   listaRefs.length = 0;
   pares.forEach(([ruta, onDato])=>{
-    const ref = dbRef(ruta);
-    const cb = snap => onDato(snap.val() || {});
+    const real = rutaReal(ruta);
+    const ref = db.ref(real);
+    let llego = false;
+    const cb = snap => { llego = true; const v = snap.val() || {}; cacheGuardar(real, v); onDato(v); };
     ref.on('value', cb);
     listaRefs.push({ref, cb});
+    cacheLeer(real).then(c=>{ if(c && !llego) onDato(c.v || {}); });
   });
 }
 
@@ -489,8 +550,9 @@ function recuperarPassword(){
     .catch(err=> mensajeMuro(textoErrorAuth(err)));
 }
 
-function hacerLogout(){
+async function hacerLogout(){
   apagarSuscripciones();
+  await cacheBorrarTodo();
   auth.signOut();
 }
 
@@ -504,23 +566,30 @@ function onAuthCambio(user){
   // Escucha la propia cuenta: cuando el admin la aprueba (o le cambia/quita el
   // rol) la pantalla se actualiza sola, sin tener que volver a entrar.
   _refUsuario = db.ref('users/'+user.uid);
-  _refUsuario.on('value', async snap=>{
-    const u = snap.val() || {};
-    const rol = u.role || null;
-    if(!rol){
-      rolActual = null;
-      mostrarMuro(u.rolSolicitado ? 'pendiente' : 'pedirAcceso');
-      return;
-    }
-    if(rol === rolActual) return;
-    rolActual = rol;
-    if(esAdmin()){
-      await sincronizarRolesConfig();
-      escucharPendientes();
-    }
-    await cargarTemporadas();
-    mostrarApp();
+  let llegoUsuario = false;
+  cacheLeer('users/'+user.uid).then(c=>{ if(c && !llegoUsuario) aplicarCuenta(c.v || {}); });
+  _refUsuario.on('value', snap=>{
+    llegoUsuario = true;
+    cacheGuardar('users/'+user.uid, snap.val());
+    aplicarCuenta(snap.val() || {});
   });
+}
+
+async function aplicarCuenta(u){
+  const rol = u.role || null;
+  if(!rol){
+    rolActual = null;
+    mostrarMuro(u.rolSolicitado ? 'pendiente' : 'pedirAcceso');
+    return;
+  }
+  if(rol === rolActual) return;
+  rolActual = rol;
+  if(esAdmin()){
+    sincronizarRolesConfig();
+    escucharPendientes();
+  }
+  await cargarTemporadas();
+  mostrarApp();
 }
 
 function escucharPendientes(){
@@ -630,7 +699,7 @@ function renderVistaActual(){
   aviso.classList.toggle('oculto', sinTemporada || temporadaActual === temporadaActiva);
   aviso.textContent = `Estás viendo la temporada ${temporadaActual}. La temporada activa es ${temporadaActiva}.`;
   ({
-    inicio: renderInicio, plantel: renderPlantel, partidos: renderPartidos, estadisticas: renderEstadisticas,
+    inicio: renderInicio, plantel: renderPlantel, partidos: renderPartidos, estadisticas: renderEstadisticas, gps: renderGps,
     fixture: renderFixture, tabla: renderTabla, confiabilidad: renderConfiabilidad, recursos: renderRecursos,
     reportes: renderReportes, usuarios: renderUsuarios,
   })[vistaActual]();
@@ -640,6 +709,7 @@ function renderVistaActual(){
 // G/E/P sale del campo "resultado" que se elige a mano; si no está, de los goles.
 function desenlace(p){
   if(!p) return null;
+  if(p.resultado === 'Por jugar') return null;
   const r = {Victoria:'G', Empate:'E', Derrota:'P'}[p.resultado];
   if(r) return r;
   if(p.resultado === 'No Disputado' || p.golesFavor == null || p.golesContra == null) return null;
@@ -667,9 +737,10 @@ function statsJugadores(convocatorias, partidos, competencia){
   Object.entries(convocatorias||{}).forEach(([fecha, conv])=>{
     if(competencia && (partidos?.[fecha]?.competencia || '') !== competencia) return;
     Object.entries(conv||{}).forEach(([jid,c])=>{
-      const x = st[jid] || (st[jid] = {jugador:'', conv:0, tit:0, min:0, goles:0, asist:0, ta:0, tr:0, dest:0});
+      const x = st[jid] || (st[jid] = {jugador:'', conv:0, jug:0, tit:0, min:0, goles:0, asist:0, ta:0, tr:0, dest:0});
       if(c.jugador) x.jugador = c.jugador;
       x.conv++; if(c.titular) x.tit++;
+      if(c.titular || (Number(c.minutos)||0) > 0) x.jug++;
       x.min += Number(c.minutos)||0; x.goles += Number(c.goles)||0; x.asist += Number(c.asistencias)||0;
       if(c.amarilla) x.ta++; if(c.roja) x.tr++; if(c.destacado) x.dest++;
     });
@@ -717,13 +788,49 @@ function situacionTarjetas(convocatorias, partidos, antesDeFecha){
 
 const badge = x => x ? `<span class="res res-${x}">${x}</span>` : '';
 
+// ---------- Buscador de jugadores (todas las categorías visibles) ----------
+let _indiceJugadores = null;
+async function cargarIndiceJugadores(){
+  const pares = await Promise.all(categoriasVisibles().map(c=> leerUnaVez('plantel/'+c.id).then(v=>[c.id, v || {}])));
+  _indiceJugadores = pares.flatMap(([cat, pl])=> Object.entries(pl).map(([id, j])=>({id, cat, j})));
+  buscarJugador(document.getElementById('buscadorJugador').value);
+}
+function buscarJugador(texto){
+  const el = document.getElementById('resultadosBusqueda');
+  const q = sinAcentos(texto.trim());
+  if(!q || !_indiceJugadores){ el.classList.add('oculto'); return; }
+  const r = _indiceJugadores
+    .filter(x=> sinAcentos(`${nombreCompleto(x.j)} ${x.j.nombre||''} ${x.j.apellido||''}`).includes(q))
+    .sort((a,b)=> !!a.j.archivado - !!b.j.archivado || nombreCompleto(a.j).localeCompare(nombreCompleto(b.j)))
+    .slice(0, 12);
+  el.innerHTML = r.length
+    ? r.map(x=>`<button onmousedown="irAJugador('${x.cat}','${x.id}')">${esc(nombreCompleto(x.j))}
+        <span class="nota">· ${esc(nombreCategoria(x.cat))} · ${esc(nombrePosicion(x.j.posicion))}${x.j.archivado ? ' · archivado' : ''}</span></button>`).join('')
+    : '<div class="nota" style="padding:8px 10px;">Sin resultados</div>';
+  el.classList.remove('oculto');
+}
+function irAJugador(cat, id){
+  const x = (_indiceJugadores || []).find(y=> y.id === id && y.cat === cat);
+  document.getElementById('buscadorJugador').value = '';
+  document.getElementById('resultadosBusqueda').classList.add('oculto');
+  categoriaActual = cat;
+  document.getElementById('selectorCategoria').value = cat;
+  filtrosPlantel[cat] = {};
+  if(x?.j.archivado) mostrarArchivados[cat] = true;
+  fichaAbierta[cat] = id;
+  vistaActual = 'plantel';
+  document.querySelectorAll('#nav button[data-vista]').forEach(b=>b.classList.toggle('activo', b.dataset.vista === 'plantel'));
+  renderVistaActual();
+  setTimeout(()=> document.getElementById('historial_'+id)?.closest('.panel-anidado')?.scrollIntoView({behavior:'smooth', block:'start'}), 700);
+}
+
 // ---------- Inicio ----------
 let _refsInicio = [];
 function renderInicio(){
   const sec = document.getElementById('vistaInicio');
   sec.classList.remove('oculto');
   if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver y cargar datos.</p>'; return; }
-  const d = {plantel:{}, lesiones:{}, contratos:{}, partidos:{}, convocatorias:{}};
+  const d = {plantel:{}, lesiones:{}, contratos:{}, partidos:{}, convocatorias:{}, tablaPosiciones:{}};
   const rerender = ()=>{ sec.innerHTML = inicioHTML(d); };
   suscribirRefs(_refsInicio, Object.keys(d).flatMap(k=> paresPorCategoria(k, v=>{ d[k]=v; rerender(); })));
 }
@@ -757,6 +864,7 @@ function inicioHTML(d){
   const ultimos = Object.entries(partidosCat).filter(([,p])=>desenlace(p)).sort((a,b)=>(+b[0])-(+a[0])).slice(0,5);
   const st = Object.entries(statsJugadores(d.convocatorias[cat], partidosCat));
   const tarjetas = situacionTarjetas(d.convocatorias[cat], partidosCat);
+  const proximo = Object.entries(partidosCat).filter(([,p])=> p.resultado === 'Por jugar').sort((a,b)=> (+a[0]) - (+b[0]))[0];
   const top = campo => st.filter(([,x])=>x[campo]>0).sort((a,b)=>b[1][campo]-a[1][campo]).slice(0,5);
   const listaTop = (campo, vacio) => {
     const t = top(campo);
@@ -774,6 +882,7 @@ function inicioHTML(d){
       <td>${p.golesFavor ?? ''} - ${p.golesContra ?? ''}</td><td>${badge(desenlace(p))}</td></tr>`).join('')}</tbody></table>`
       : '<p class="nota">Sin partidos jugados cargados.</p>'}
   </div>
+  ${proximo ? proximoPartidoHTML(cat, proximo[0], proximo[1], d) : ''}
   <div class="grid2">
     <div class="card"><h2>Goleadores</h2>${listaTop('goles', 'Sin goles cargados en las convocatorias.')}</div>
     <div class="card"><h2>Asistencias</h2>${listaTop('asist', 'Sin asistencias cargadas en las convocatorias.')}</div>
@@ -817,6 +926,32 @@ function inicioHTML(d){
   ${temporadaAdminHTML()}`;
 }
 
+// Próximo partido (primera fecha "Por jugar"): rival, posiciones en la tabla
+// cargada, convocatoria y quiénes no pueden jugar por tarjetas.
+function proximoPartidoHTML(cat, fecha, p, d){
+  const tabla = d.tablaPosiciones[cat];
+  const filas = Array.isArray(tabla) ? tabla : Object.values(tabla || {});
+  const fila = nombre => {
+    const n = sinAcentos(nombre || '');
+    if(!n) return null;
+    const i = filas.findIndex(f=>{ const e = sinAcentos(f.equipo || ''); return e && (e.includes(n) || n.includes(e)); });
+    return i < 0 ? null : {...filas[i], pos: filas[i].pos ?? i+1};
+  };
+  const rival = fila(p.rival), propio = fila(CLUB.fuentes?.liga?.config?.nombreEquipoEnLiga || CLUB.club.nombre);
+  const conv = d.convocatorias[cat]?.[fecha];
+  const tarjetas = situacionTarjetas(d.convocatorias[cat], d.partidos[cat], fecha);
+  const nombre = id => d.plantel[cat]?.[id] ? nombreCompleto(d.plantel[cat][id]) : (tarjetas.nombre[id] || '');
+  const suspendidos = Object.keys(tarjetas.suspendido).map(nombre).filter(Boolean);
+  return `
+  <div class="card">
+    <h2>Próximo partido</h2>
+    <p style="font-size:1.05rem;margin:4px 0 10px;"><b>Fecha ${fecha}</b>${p.fechaPartido ? ' · ' + esc(fechaCorta(p.fechaPartido, true)) : ''} · vs <b>${esc(p.rival)}</b> (${esc(p.localia)})${p.competencia ? ' · ' + esc(p.competencia) : ''}</p>
+    ${rival || propio ? `<p class="nota">En la tabla: ${propio ? `nosotros ${propio.pos}° (${propio.pts ?? '—'} pts)` : ''}${propio && rival ? ' · ' : ''}${rival ? `${esc(p.rival)} ${rival.pos}° (${rival.pts ?? '—'} pts)` : ''}</p>` : ''}
+    <p class="nota">${conv ? `Convocatoria cargada: ${Object.keys(conv).length} jugadores.` : 'Todavía no se cargó la convocatoria.'}
+      ${suspendidos.length ? ` <b style="color:var(--rojo);">No pueden jugar por tarjetas: ${esc(suspendidos.join(', '))}.</b>` : ''}</p>
+  </div>`;
+}
+
 // ---------- Estadísticas (por categoría) ----------
 let _refsEstadisticas = [];
 function renderEstadisticas(){
@@ -843,11 +978,14 @@ function estadisticasHTML(cat, partidos, convocatorias, plantel){
   const filaRes = (t,r)=>`<tr><td>${t}</td><td>${r.pj}</td><td>${r.g}</td><td>${r.e}</td><td>${r.p}</td><td>${r.gf}</td><td>${r.gc}</td><td>${r.gf-r.gc}</td><td>${r.pct}%</td></tr>`;
   const sistemas = {};
   lista.forEach(p=>{ if(p.sistemaTactico) sistemas[p.sistemaTactico] = (sistemas[p.sistemaTactico]||0) + 1; });
-  const filas = Object.entries(statsJugadores(convocatorias, partidos, comp))
+  const st = statsJugadores(convocatorias, partidos, comp);
+  const elegidos = (compararIds[cat] || []).filter(id=> st[id]);
+  const filas = Object.entries(st)
     .sort((a,b)=> b[1].tit-a[1].tit || b[1].min-a[1].min)
     .map(([jid,x])=>`<tr>
+      <td><input type="checkbox" class="chkComparar" value="${jid}" ${elegidos.includes(jid)?'checked':''}></td>
       <td>${esc(plantel[jid] ? nombreCompleto(plantel[jid]) : (x.jugador || '(fuera del plantel)'))}</td>
-      <td>${x.conv}</td><td>${x.tit}</td><td>${x.min}</td><td>${x.goles}</td><td>${x.asist}</td><td>${x.ta}</td><td>${x.tr}</td><td>${x.dest}</td>
+      <td>${x.conv}</td><td>${x.jug}</td><td>${x.tit}</td><td>${x.min}</td><td>${x.goles}</td><td>${x.asist}</td><td>${x.ta}</td><td>${x.tr}</td><td>${x.dest}</td>
     </tr>`).join('');
   return `
   <div class="card">
@@ -869,12 +1007,407 @@ function estadisticasHTML(cat, partidos, convocatorias, plantel){
   </div>
   <div class="card">
     <h2>Estadísticas por jugador</h2>
-    <p class="nota">Sale de las convocatorias cargadas en cada partido.</p>
+    <p class="nota">Sale de las convocatorias cargadas en cada partido. Marcá dos o más para compararlos.</p>
     <table>
-      <thead><tr><th>Jugador</th><th>Convocatorias</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th><th>Destacado</th></tr></thead>
-      <tbody>${filas || '<tr><td colspan="9">Todavía no hay convocatorias cargadas.</td></tr>'}</tbody>
+      <thead><tr><th></th><th>Jugador</th><th>Convocatorias</th><th>Jugó</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th><th>Destacado</th></tr></thead>
+      <tbody>${filas || '<tr><td colspan="11">Todavía no hay convocatorias cargadas.</td></tr>'}</tbody>
+    </table>
+    ${filas ? '<button class="secundario" onclick="compararSeleccionados()" style="margin-top:10px;">Comparar marcados</button>' : ''}
+  </div>
+  ${elegidos.length >= 2 ? comparacionHTML(elegidos, st, plantel) : ''}`;
+}
+
+let compararIds = {}; // categoriaId -> ids marcados en Estadísticas
+function compararSeleccionados(){
+  compararIds[categoriaActual] = [...document.querySelectorAll('.chkComparar:checked')].map(e=>e.value);
+  if(compararIds[categoriaActual].length < 2){ mostrarToast('Marcá al menos dos jugadores para comparar.'); return; }
+  renderVistaActual();
+}
+
+// Lado a lado; en cada fila numérica se resalta el mejor valor.
+function comparacionHTML(ids, st, plantel){
+  const j = id => plantel[id] || {};
+  const por90 = (n, min) => min ? (n*90/min).toFixed(2) : '';
+  const filas = [
+    ['Posición', id=> esc(nombrePosicion(j(id).posicion))],
+    ['Edad', id=> edadDe(j(id).fechaNacimiento)],
+    ['Altura', id=> esc(j(id).altura)], ['Peso', id=> esc(j(id).peso)], ['Pie hábil', id=> esc(j(id).pieHabil)],
+    ['Convocatorias', id=> st[id].conv, true], ['Jugó', id=> st[id].jug, true], ['Titular', id=> st[id].tit, true],
+    ['Minutos', id=> st[id].min, true],
+    ['Minutos por partido jugado', id=> st[id].jug ? Math.round(st[id].min / st[id].jug) : '', true],
+    ['Goles', id=> st[id].goles, true], ['Asistencias', id=> st[id].asist, true],
+    ['Goles cada 90 min', id=> por90(st[id].goles, st[id].min), true],
+    ['Goles + asistencias cada 90 min', id=> por90(st[id].goles + st[id].asist, st[id].min), true],
+    ['Amarillas', id=> st[id].ta], ['Rojas', id=> st[id].tr], ['Destacado', id=> st[id].dest, true],
+  ];
+  return `
+  <div class="card">
+    <h2>Comparación</h2>
+    <table>
+      <thead><tr><th></th>${ids.map(id=>`<th>${esc(plantel[id] ? nombreCompleto(plantel[id]) : st[id].jugador)}</th>`).join('')}</tr></thead>
+      <tbody>${filas.map(([titulo, valor, resaltar])=>{
+        const vals = ids.map(valor);
+        const max = resaltar ? Math.max(...vals.map(Number).filter(v=>!isNaN(v))) : null;
+        return `<tr><td>${titulo}</td>${vals.map(v=>`<td${resaltar && v !== '' && Number(v) === max && max > 0 ? ' class="mejor"' : ''}>${v ?? ''}</td>`).join('')}</tr>`;
+      }).join('')}</tbody>
     </table>
   </div>`;
+}
+
+// ---------- GPS / rendimiento físico ----------
+// Sesiones en temporadas/<año>/gps/<cat>/<sesionId> = {fecha, tipo, titulo,
+// fuente, registros: {<slug del nombre>: {jugador, minutos, ...métricas}}}.
+// Se guarda el nombre tal cual lo trae el proveedor; el vínculo con el
+// plantel se resuelve al mostrar (gpsAlias/<cat>/<slug> = jugadorId, o por
+// nombre), así la carga desde la app y la del importador automático andan igual.
+const METRICAS_GPS = [
+  {k:'minutos', t:'Min.', d:0, re:/duration|duracion|minut|tiempo jugado|time played/},
+  {k:'distanciaTotalM', t:'Distancia (m)', d:0, re:/total distance|distancia total|^distance|^distancia$|^distancia \(m\)/},
+  {k:'distanciaPorMinM', t:'m/min', d:1, re:/m\/min|meterage|(distance|distancia).*(por min|per min|\/min)/},
+  {k:'metros1821', t:'18-21 km/h (m)', d:0, re:/18.?21/},
+  {k:'metros2125', t:'21-25 km/h (m)', d:0, re:/21.?25/},
+  {k:'metros25Mas', t:'+25 km/h (m)', d:0, re:/(\+|>|mas de) ?25|25 ?(\+|km\/h ?\+)/},
+  {k:'distanciaAltaVelocidadPorMin', t:'Alta vel. m/min', d:1, re:/(hsr|high speed|alta velocidad).*(min)/},
+  {k:'sprints', t:'Sprints', d:0, re:/^(n.? ?de )?sprints?( count| efforts)?$|cantidad de sprints/},
+  {k:'velMaxKmh', t:'Vel. máx (km/h)', d:1, max:true, re:/max(imum|ima)? ?(speed|velocity|velocidad|vel)|vel(ocidad)? ?max|top speed/},
+  {k:'aceleraciones', t:'Acel.', d:0, re:/^(n.? ?de )?(accel|aceler)/},
+  {k:'aceleracionesBanda2', t:'Acel. banda 2', d:0, re:null},
+  {k:'desaceleraciones', t:'Desacel.', d:0, re:/^(n.? ?de )?(decel|desacel|deacel)/},
+  {k:'aceleracionMaximaIndividual', t:'Acel. máx (m/s²)', d:2, max:true, re:/max.*(accel|aceler)/},
+  {k:'desaceleracionMaximaIndividual', t:'Desacel. máx (m/s²)', d:2, max:true, abs:true, re:/max.*(decel|desacel)/},
+  {k:'playerLoad', t:'Player load', d:0, re:/player ?load|carga/},
+];
+// Algunos proveedores dan la desaceleración en negativo: se compara por magnitud.
+const valorGps = (r, m) => { const v = Number(r?.[m.k]) || 0; return m.abs ? Math.abs(v) : v; };
+const slugNombre = n => sinAcentos(n).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+// Alias guardado > nombre y apellido > inicial + apellido > apellido único.
+function resolverJugadorGps(nombre, plantel, alias){
+  const slug = slugNombre(nombre);
+  if(alias?.[slug] && plantel[alias[slug]]) return alias[slug];
+  const palabras = new Set(slug.split('_').filter(Boolean));
+  const partes = j => [slugNombre(j.apellido||'').split('_').filter(Boolean), slugNombre(j.nombre||'').split('_').filter(Boolean)];
+  const conApellido = Object.entries(plantel).filter(([,j])=>{ const [ap] = partes(j); return ap.length && ap.every(w=>palabras.has(w)); });
+  const conNombre = conApellido.filter(([,j])=>{
+    const [, no] = partes(j);
+    return no.some(w=>palabras.has(w)) || [...palabras].some(w=> w.length === 1 && no.some(n=> n[0] === w));
+  });
+  if(conNombre.length === 1) return conNombre[0][0];
+  return conApellido.length === 1 && !conNombre.length ? conApellido[0][0] : null;
+}
+
+function numeroGps(v){
+  v = String(v ?? '').trim();
+  if(!v) return 0;
+  const tiempo = v.match(/^(\d+):(\d{2})(?::(\d{2}))?$/);
+  if(tiempo) return tiempo[3] !== undefined ? (+tiempo[1])*60 + (+tiempo[2]) + (+tiempo[3])/60 : (+tiempo[1]) + (+tiempo[2])/60;
+  if(v.includes(',') && v.includes('.')) v = v.lastIndexOf(',') > v.lastIndexOf('.') ? v.replace(/\./g,'').replace(',', '.') : v.replace(/,/g,'');
+  else v = v.replace(',', '.');
+  const n = parseFloat(v);
+  return isNaN(n) ? 0 : n;
+}
+
+function parsearCsv(texto){
+  texto = texto.replace(/^\uFEFF/, '');
+  const primera = texto.split(/\r?\n/)[0];
+  const sep = [';', '\t', ','].sort((a,b)=> primera.split(b).length - primera.split(a).length)[0];
+  const filas = []; let fila = [], campo = '', comillas = false;
+  for(let i=0; i<texto.length; i++){
+    const c = texto[i];
+    if(comillas){
+      if(c === '"' && texto[i+1] === '"'){ campo += '"'; i++; }
+      else if(c === '"') comillas = false;
+      else campo += c;
+    } else if(c === '"') comillas = true;
+    else if(c === sep){ fila.push(campo); campo = ''; }
+    else if(c === '\n' || c === '\r'){
+      if(c === '\r' && texto[i+1] === '\n') i++;
+      fila.push(campo); campo = '';
+      if(fila.some(x=>x.trim() !== '')) filas.push(fila);
+      fila = [];
+    } else campo += c;
+  }
+  fila.push(campo);
+  if(fila.some(x=>x.trim() !== '')) filas.push(fila);
+  const encabezados = (filas.shift() || []).map(h=>h.trim());
+  return {encabezados, filas: filas.map(f=> Object.fromEntries(encabezados.map((h,i)=>[h, (f[i] ?? '').trim()])))};
+}
+
+// Mapeo de columnas: lo último usado en este navegador > club.json
+// (fuentes.gps.config.mapeoColumnas, el mismo del importador de Python) > adivinar.
+function mapeoInicialGps(encabezados){
+  let guardado = {};
+  try{ guardado = JSON.parse(localStorage.getItem('mapeoGps') || '{}'); }catch(e){}
+  const deConfig = CLUB.fuentes?.gps?.config?.mapeoColumnas || {};
+  const mapeo = {};
+  const elegir = (campo, re) => encabezados.find(h=> guardado[h] === campo) || encabezados.find(h=> deConfig[h] === campo)
+    || (re ? encabezados.find(h=> re.test(sinAcentos(h))) : undefined) || '';
+  mapeo.jugador = elegir('jugador', /player|jugador|^name$|nombre|athlete|atleta/);
+  const usadas = new Set([mapeo.jugador]);
+  // Desaceleraciones antes que aceleraciones: "desaceleraciones" contiene "aceleraciones".
+  [...METRICAS_GPS].sort((a,b)=> /desacel/.test(b.k) - /desacel/.test(a.k) || !!b.max - !!a.max).forEach(m=>{
+    const h = encabezados.filter(x=>!usadas.has(x)).find(x=> guardado[x] === m.k) || encabezados.filter(x=>!usadas.has(x)).find(x=> deConfig[x] === m.k)
+      || (m.re ? encabezados.filter(x=>!usadas.has(x)).find(x=> m.re.test(sinAcentos(x))) : undefined) || '';
+    mapeo[m.k] = h; if(h) usadas.add(h);
+  });
+  return mapeo;
+}
+
+let _refsGps = [];
+let _gpsCtx = {plantel:{}, alias:{}, partidos:{}, sesiones:{}};
+let gpsSesionSel = {}, gpsTipoPromedio = {};
+let _importGps = null; // {archivo, encabezados, filas, mapeo}
+
+function renderGps(){
+  const sec = document.getElementById('vistaGps');
+  sec.classList.remove('oculto');
+  const datos = document.getElementById('gpsDatos');
+  if(!categoriaActual){ datos.innerHTML = '<p>No hay categorías configuradas.</p>'; return; }
+  if(!db){ datos.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver esto.</p>'; return; }
+  const cat = categoriaActual;
+  if(_importGps && _importGps.cat !== cat) _importGps = null;
+  _gpsCtx = {plantel:{}, alias:{}, partidos:{}, sesiones:{}};
+  renderImportGps();
+  const rerender = ()=>{ datos.innerHTML = gpsHTML(cat); };
+  suscribirRefs(_refsGps, [
+    ['gps/'+cat, v=>{ _gpsCtx.sesiones = v; rerender(); }],
+    ['plantel/'+cat, v=>{ _gpsCtx.plantel = v; rerender(); }],
+    ['gpsAlias/'+cat, v=>{ _gpsCtx.alias = v; rerender(); }],
+    ['partidos/'+cat, v=>{ _gpsCtx.partidos = v; rerender(); }],
+  ]);
+}
+
+function etiquetaSesion(ses, partidos){
+  const p = Object.entries(partidos || {}).find(([,x])=> x.fechaPartido && x.fechaPartido === ses.fecha);
+  return `${fechaCorta(ses.fecha)} · ${ses.tipo === 'partido' ? 'Partido' : 'Entrenamiento'}`
+    + (p ? ` · Fecha ${p[0]} vs ${p[1].rival || ''}` : '') + (ses.titulo ? ` · ${ses.titulo}` : '');
+}
+const fmtGps = (v, d) => (v === undefined || v === null || v === '' || isNaN(v)) ? '' : Number(v).toFixed(d);
+
+function gpsHTML(cat){
+  const {sesiones, plantel, alias, partidos} = _gpsCtx;
+  const ids = Object.keys(sesiones).sort((a,b)=> (sesiones[b].fecha||'').localeCompare(sesiones[a].fecha||'') || b.localeCompare(a));
+  if(!ids.length) return `<div class="card"><h2>GPS — ${esc(nombreCategoria(cat))} ${esc(temporadaActual)}</h2>
+    <p class="nota">Todavía no hay sesiones cargadas en esta categoría y temporada. Se cargan con "Cargar sesión desde CSV" (cualquier proveedor exporta CSV) o con el importador automático (scripts/scrape_main.py).</p></div>`;
+  const sel = ids.includes(gpsSesionSel[cat]) ? gpsSesionSel[cat] : ids[0];
+  const ses = sesiones[sel];
+  const regs = Object.entries(ses.registros || {});
+  const cols = METRICAS_GPS.filter(m=> regs.some(([,r])=> valorGps(r, m) > 0));
+  const maximos = Object.fromEntries(cols.map(m=>[m.k, Math.max(...regs.map(([,r])=> valorGps(r, m)||0))]));
+  const conMin = regs.filter(([,r])=> Number(r.minutos) > 0 || !cols.some(m=>m.k==='minutos'));
+  const promedio = Object.fromEntries(cols.map(m=>[m.k, conMin.length ? conMin.reduce((a,[,r])=>a+(valorGps(r, m)||0), 0) / conMin.length : 0]));
+  const editar = puedeEditar();
+  const opcionesJug = Object.entries(plantel).filter(([,j])=>!j.archivado)
+    .sort((a,b)=> nombreCompleto(a[1]).localeCompare(nombreCompleto(b[1])))
+    .map(([id,j])=>`<option value="${id}">${esc(nombreCompleto(j))}</option>`).join('');
+  const filas = regs
+    .sort((a,b)=> (Number(b[1].distanciaTotalM)||0) - (Number(a[1].distanciaTotalM)||0) || (Number(b[1].minutos)||0) - (Number(a[1].minutos)||0))
+    .map(([slug, r])=>{
+      const jid = resolverJugadorGps(r.jugador || slug, plantel, alias);
+      const nombre = jid ? esc(nombreCompleto(plantel[jid]))
+        : `${esc(r.jugador || slug)} <span class="nota">(sin vincular)</span>${editar ? ` <select onchange="vincularGps('${cat}','${slug}',this.value)"><option value="">Vincular con...</option>${opcionesJug}</select>` : ''}`;
+      return `<tr><td>${nombre}</td>${cols.map(m=>`<td${valorGps(r, m) === maximos[m.k] && maximos[m.k] > 0 ? ' class="mejor"' : ''}>${fmtGps(valorGps(r, m), m.d)}</td>`).join('')}</tr>`;
+    }).join('');
+  return `
+  <div class="card">
+    <h2>GPS — ${esc(nombreCategoria(cat))} ${esc(temporadaActual)}</h2>
+    <div class="fila-form">
+      <select onchange="gpsSesionSel['${cat}']=this.value; renderVistaActual();">${ids.map(id=>`<option value="${esc(id)}" ${id===sel?'selected':''}>${esc(etiquetaSesion(sesiones[id], partidos))}</option>`).join('')}</select>
+      ${editar ? `<button class="peligro" style="flex:none;" onclick="borrarSesionGps('${cat}','${esc(sel)}')">Borrar sesión</button>` : ''}
+    </div>
+    <p class="nota">${regs.length} jugadores · fuente: ${esc(ses.fuente || '—')}${ses.archivo ? ' ('+esc(ses.archivo)+')' : ''}. En amarillo, el mejor valor de la sesión.</p>
+    <table>
+      <thead><tr><th>Jugador</th>${cols.map(m=>`<th>${m.t}</th>`).join('')}</tr></thead>
+      <tbody>${filas}</tbody>
+      <tfoot><tr><th>Promedio del equipo</th>${cols.map(m=>`<th>${fmtGps(promedio[m.k], m.d)}</th>`).join('')}</tr></tfoot>
+    </table>
+  </div>
+  ${promediosGpsHTML(cat)}`;
+}
+
+function promediosGpsHTML(cat){
+  const {sesiones, plantel, alias} = _gpsCtx;
+  const tipo = gpsTipoPromedio[cat] || 'partido';
+  const acum = {};
+  Object.values(sesiones).filter(x=> tipo === 'todos' || x.tipo === tipo).forEach(x=>
+    Object.entries(x.registros || {}).forEach(([slug, r])=>{
+      const jid = resolverJugadorGps(r.jugador || slug, plantel, alias);
+      const k = jid || 'sin:' + slug;
+      const a = acum[k] || (acum[k] = {nombre: jid ? nombreCompleto(plantel[jid]) : (r.jugador || slug) + ' (sin vincular)', n: 0, suma: {}, max: {}});
+      a.n++;
+      METRICAS_GPS.forEach(m=>{ const v = valorGps(r, m) || 0; a.suma[m.k] = (a.suma[m.k] || 0) + v; a.max[m.k] = Math.max(a.max[m.k] || 0, v); });
+    }));
+  const filas = Object.values(acum);
+  const cols = METRICAS_GPS.filter(m=> filas.some(a=> a.max[m.k] > 0));
+  return `
+  <div class="card">
+    <h2>Promedios por jugador</h2>
+    <div class="fila-form"><select onchange="gpsTipoPromedio['${cat}']=this.value; renderVistaActual();">
+      ${[['partido','Partidos'], ['entrenamiento','Entrenamientos'], ['todos','Todas las sesiones']].map(([v,t])=>`<option value="${v}" ${v===tipo?'selected':''}>${t}</option>`).join('')}
+    </select></div>
+    <p class="nota">Promedio por sesión; en velocidad y aceleración máximas, el mejor registro.</p>
+    <table>
+      <thead><tr><th>Jugador</th><th>Sesiones</th>${cols.map(m=>`<th>${m.t}</th>`).join('')}</tr></thead>
+      <tbody>${filas.sort((a,b)=> a.nombre.localeCompare(b.nombre)).map(a=>`<tr><td>${esc(a.nombre)}</td><td>${a.n}</td>${cols.map(m=>`<td>${fmtGps(m.max === true ? a.max[m.k] : a.suma[m.k]/a.n, m.d)}</td>`).join('')}</tr>`).join('')
+        || `<tr><td colspan="${cols.length + 2}">No hay sesiones de ese tipo.</td></tr>`}</tbody>
+    </table>
+  </div>`;
+}
+
+function vincularGps(cat, slug, jugadorId){
+  if(!jugadorId) return;
+  dbRef(`gpsAlias/${cat}/${slug}`).set(jugadorId);
+}
+function borrarSesionGps(cat, id){
+  if(!confirm('¿Borrar esta sesión de GPS?')) return;
+  dbRef(`gps/${cat}/${id}`).remove();
+}
+
+// ---- Carga desde CSV (paso 1: archivo y datos de la sesión; paso 2: columnas y jugadores)
+function renderImportGps(){
+  const el = document.getElementById('gpsImport');
+  if(!puedeEditar()){ el.innerHTML = ''; return; }
+  const imp = _importGps;
+  el.innerHTML = `
+  <div class="card">
+    <h2>Cargar sesión desde CSV</h2>
+    <p class="nota">Sirve para cualquier proveedor (Catapult, STATSports, WIMU, Playermaker...): exportá la sesión a CSV desde su software y subila acá.</p>
+    <div class="fila-form">
+      <input type="date" id="gpsFecha" value="${esc(imp?.fecha || hoyISO())}" title="Día de la sesión">
+      <select id="gpsTipo">${[['partido','Partido'], ['entrenamiento','Entrenamiento']].map(([v,t])=>`<option value="${v}" ${imp?.tipo===v?'selected':''}>${t}</option>`).join('')}</select>
+      <input id="gpsTitulo" placeholder="Título (opcional, ej. turno mañana)" value="${esc(imp?.titulo)}">
+      <input type="file" id="gpsArchivo" accept=".csv,.txt" onchange="leerCsvGps(this.files[0])">
+    </div>
+    ${imp ? importGpsPaso2HTML(imp) : ''}
+  </div>`;
+}
+
+function leerCsvGps(archivo){
+  if(!archivo) return;
+  const lector = new FileReader();
+  lector.onload = ()=>{
+    const {encabezados, filas} = parsearCsv(String(lector.result));
+    if(!encabezados.length || !filas.length){ mostrarToast('El archivo no tiene filas para importar.'); return; }
+    _importGps = {cat: categoriaActual, archivo: archivo.name, encabezados, filas, mapeo: mapeoInicialGps(encabezados),
+      fecha: document.getElementById('gpsFecha').value, tipo: document.getElementById('gpsTipo').value, titulo: document.getElementById('gpsTitulo').value.trim()};
+    renderImportGps();
+  };
+  lector.readAsText(archivo);
+}
+
+function cambiarMapeoGps(campo, columna){
+  ['fecha','tipo','titulo'].forEach(k=> _importGps[k] = document.getElementById('gps' + k[0].toUpperCase() + k.slice(1)).value);
+  _importGps.mapeo[campo] = columna;
+  renderImportGps();
+}
+
+// Filas que son resúmenes del proveedor ("Team average", "Promedio"...) no son jugadores.
+const esFilaResumen = n => /^(team|equipo|promedio|average|total|media)\b/i.test(sinAcentos(n));
+
+function filasImportGps(imp){
+  return imp.filas.map(f=> f[imp.mapeo.jugador] || '').map((nombre, i)=>({nombre, fila: imp.filas[i]}))
+    .filter(x=> x.nombre && !esFilaResumen(x.nombre));
+}
+
+function importGpsPaso2HTML(imp){
+  const opcionesCol = sel => `<option value="">— no usar —</option>` + imp.encabezados.map(h=>`<option value="${esc(h)}" ${h===sel?'selected':''}>${esc(h)}</option>`).join('');
+  const campos = [{k:'jugador', t:'Jugador (nombre)'}, ...METRICAS_GPS];
+  const {plantel, alias} = _gpsCtx;
+  const opcionesJug = Object.entries(plantel).filter(([,j])=>!j.archivado)
+    .sort((a,b)=> nombreCompleto(a[1]).localeCompare(nombreCompleto(b[1])))
+    .map(([id,j])=>`<option value="${id}">${esc(nombreCompleto(j))}</option>`).join('');
+  const nombres = imp.mapeo.jugador ? [...new Set(filasImportGps(imp).map(x=>x.nombre))] : [];
+  const vinculos = nombres.map(n=>{
+    const jid = resolverJugadorGps(n, plantel, alias);
+    return `<tr><td>${esc(n)}</td><td><select class="gpsVinculo" data-slug="${esc(slugNombre(n))}">
+      <option value="">— sin vincular —</option>${opcionesJug.replace(`value="${jid}"`, `value="${jid}" selected`)}</select></td></tr>`;
+  }).join('');
+  const sinVincular = nombres.filter(n=> !resolverJugadorGps(n, plantel, alias)).length;
+  return `
+    <div class="subtitulo">Archivo: ${esc(imp.archivo)} · ${imp.filas.length} filas</div>
+    <div style="display:flex;gap:24px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:280px;">
+        <p class="nota">Qué columna del archivo es cada dato (se recuerda para la próxima carga).</p>
+        <table><tbody>${campos.map(c=>`<tr><td>${c.t}</td><td><select onchange="cambiarMapeoGps('${c.k}', this.value)">${opcionesCol(imp.mapeo[c.k])}</select></td></tr>`).join('')}</tbody></table>
+      </div>
+      <div style="flex:1;min-width:280px;">
+        <p class="nota">${nombres.length ? `${nombres.length} jugadores en el archivo${sinVincular ? `, <b>${sinVincular} sin reconocer</b>: elegí a quién corresponde (queda guardado para las próximas cargas)` : ', todos reconocidos'}.` : 'Elegí primero la columna del nombre del jugador.'}</p>
+        <table><tbody>${vinculos}</tbody></table>
+      </div>
+    </div>
+    <div class="fila-form" style="margin-top:10px;">
+      <button class="accion" style="flex:none;" onclick="guardarImportGps()" ${imp.mapeo.jugador ? '' : 'disabled'}>Guardar sesión</button>
+      <button class="secundario" style="flex:none;" onclick="_importGps=null; renderImportGps();">Cancelar</button>
+    </div>`;
+}
+
+async function guardarImportGps(){
+  const imp = _importGps, cat = categoriaActual;
+  const fecha = document.getElementById('gpsFecha').value, tipo = document.getElementById('gpsTipo').value;
+  const titulo = document.getElementById('gpsTitulo').value.trim();
+  if(!fecha){ mostrarToast('Poné el día de la sesión.'); return; }
+  const registros = {};
+  filasImportGps(imp).forEach(({nombre, fila})=>{
+    const r = {jugador: nombre};
+    METRICAS_GPS.forEach(m=>{ if(imp.mapeo[m.k]) r[m.k] = numeroGps(fila[imp.mapeo[m.k]]); });
+    registros[slugNombre(nombre)] = r;
+  });
+  const id = [fecha, tipo, slugNombre(titulo)].filter(Boolean).join('_');
+  if(_gpsCtx.sesiones[id] && !confirm('Ya hay una sesión cargada con ese día, tipo y título. ¿Reemplazarla?')) return;
+  const up = {};
+  up[rutaReal(`gps/${cat}/${id}`)] = {fecha, tipo, titulo: titulo || null, fuente: 'csv', archivo: imp.archivo,
+    cargadoEl: new Date().toISOString(), cargadoPor: usuario?.email || null, registros};
+  document.querySelectorAll('.gpsVinculo').forEach(s=>{ if(s.value) up[`gpsAlias/${cat}/${s.dataset.slug}`] = s.value; });
+  const mapeoGuardado = {};
+  Object.entries(imp.mapeo).forEach(([campo, col])=>{ if(col) mapeoGuardado[col] = campo; });
+  try{ localStorage.setItem('mapeoGps', JSON.stringify(mapeoGuardado)); }catch(e){}
+  await db.ref().update(up);
+  gpsSesionSel[cat] = id;
+  _importGps = null;
+  renderVistaActual();
+  mostrarToast(`Sesión guardada: ${Object.keys(registros).length} jugadores.`);
+}
+
+// ---- Ficha: GPS del jugador en todas las temporadas y categorías visibles
+function cargarGpsJugador(id){
+  const leer = (ruta) => leerUnaVez(ruta).then(v=> v || {});
+  const cats = categoriasVisibles();
+  Promise.all([
+    Promise.all(cats.map(c=> Promise.all([leer('plantel/'+c.id), leer('gpsAlias/'+c.id)]))),
+    Promise.all(temporadasLista.flatMap(t=> cats.map(c=> leer(`temporadas/${t}/gps/${c.id}`).then(v=>({t, cat: c.id, sesiones: v}))))),
+  ]).then(([porCat, gpsPorTemporada])=>{
+    const el = document.getElementById('gpsJugador_'+id);
+    if(!el) return;
+    const ctx = Object.fromEntries(cats.map((c,i)=>[c.id, {plantel: porCat[i][0], alias: porCat[i][1]}]));
+    const regs = [];
+    gpsPorTemporada.forEach(({t, cat, sesiones})=> Object.values(sesiones).forEach(ses=>
+      Object.entries(ses.registros || {}).forEach(([slug, r])=>{
+        const pl = {...ctx[cat].plantel};
+        if(!pl[id]){ const j = Object.values(ctx).map(x=>x.plantel[id]).find(Boolean); if(j) pl[id] = j; }
+        if(resolverJugadorGps(r.jugador || slug, pl, ctx[cat].alias) === id) regs.push({t, cat, ses, r});
+      })));
+    if(!regs.length){ el.innerHTML = ''; return; }
+    regs.sort((a,b)=> (b.ses.fecha||'').localeCompare(a.ses.fecha||''));
+    const cols = METRICAS_GPS.filter(m=> regs.some(x=> valorGps(x.r, m) > 0));
+    const partidos = regs.filter(x=> x.ses.tipo === 'partido');
+    const prom = m => partidos.length ? partidos.reduce((a,x)=> a + (valorGps(x.r, m)||0), 0) / partidos.length : null;
+    const mejor = m => Math.max(...regs.map(x=> valorGps(x.r, m) || 0));
+    el.innerHTML = `
+      <div class="subtitulo" style="margin-top:18px;">GPS</div>
+      <table>
+        <thead><tr><th></th>${cols.map(m=>`<th>${m.t}</th>`).join('')}</tr></thead>
+        <tbody>
+          <tr><td>Promedio en partidos (${partidos.length})</td>${cols.map(m=>`<td>${partidos.length ? fmtGps(prom(m), m.d) : ''}</td>`).join('')}</tr>
+          <tr><td>Mejor registro</td>${cols.map(m=>`<td>${fmtGps(mejor(m), m.d)}</td>`).join('')}</tr>
+        </tbody>
+      </table>
+      <table>
+        <thead><tr><th>Día</th><th>Sesión</th>${cols.map(m=>`<th>${m.t}</th>`).join('')}</tr></thead>
+        <tbody>${regs.slice(0, 15).map(x=>`<tr><td>${esc(fechaCorta(x.ses.fecha))}</td><td>${x.ses.tipo === 'partido' ? 'Partido' : 'Entrenamiento'} · ${esc(nombreCategoria(x.cat))}</td>
+          ${cols.map(m=>`<td>${fmtGps(valorGps(x.r, m), m.d)}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>
+      ${regs.length > 15 ? `<p class="nota">Últimas 15 de ${regs.length} sesiones.</p>` : ''}`;
+  });
 }
 
 // ---------- Fixture general (todas las categorías de un grupo, fecha por fecha) ----------
@@ -1222,6 +1755,7 @@ function fichaExtraHTML(id, j){
     ${puedeEditar()?`<button class="accion" onclick="guardarFicha('${id}')" style="margin-top:10px;">Guardar ficha</button>`:''}
     <div class="subtitulo" style="margin-top:18px;">Partidos y estadísticas</div>
     <div id="historial_${id}" class="nota">Cargando...</div>
+    <div id="gpsJugador_${id}"></div>
   </div>`;
 }
 
@@ -1229,39 +1763,60 @@ function fichaExtraHTML(id, j){
 // categoría conserva su historial completo (el id no cambia con el pase).
 function cargarHistorialJugador(id){
   const leer = (t, nodo) => Promise.all(categoriasVisibles().map(c=>
-    db.ref(`temporadas/${t}/${nodo}/${c.id}`).once('value').then(s=>[c.id, s.val()||{}]))).then(Object.fromEntries);
+    leerUnaVez(`temporadas/${t}/${nodo}/${c.id}`).then(v=>[c.id, v||{}]))).then(Object.fromEntries);
   Promise.all(temporadasLista.map(t=> Promise.all([leer(t, 'convocatorias'), leer(t, 'partidos')]))).then(porTemporada=>{
     const el = document.getElementById('historial_'+id);
     if(el) el.innerHTML = historialJugadorHTML(id, temporadasLista.map((t,i)=>({t, convs: porTemporada[i][0], partidos: porTemporada[i][1]})));
   });
+  cargarGpsJugador(id);
+}
+
+// Estado del jugador en cada partido de su categoría (como la ficha de Tigre).
+function estadoEnFecha(p, conv, id){
+  if(p.resultado === 'No Disputado') return 'No disputado';
+  if(!desenlace(p)) return 'Por jugar';
+  if(!conv) return 'Sin convocatoria';
+  const c = conv[id];
+  if(!c) return 'No citado';
+  if(c.titular) return 'Titular';
+  return (Number(c.minutos)||0) > 0 ? 'Entró' : 'No ingresó';
 }
 
 function historialJugadorHTML(id, temporadas){
   const filas = [], resumen = {};
-  temporadas.forEach(({t, convs, partidos})=> Object.entries(convs).forEach(([cat, porFecha])=> Object.entries(porFecha||{}).forEach(([fecha, conv])=>{
-    const c = conv?.[id];
-    if(!c) return;
-    const p = partidos[cat]?.[fecha] || {};
-    filas.push({t, cat, fecha, p, c});
-    const k = `${t} · ${nombreCategoria(cat)} — ${p.competencia || 'Sin competencia'}`;
-    const x = resumen[k] || (resumen[k] = {conv:0, tit:0, min:0, goles:0, asist:0, ta:0, tr:0});
-    x.conv++; if(c.titular) x.tit++;
-    x.min += Number(c.minutos)||0; x.goles += Number(c.goles)||0; x.asist += Number(c.asistencias)||0;
-    if(c.amarilla) x.ta++; if(c.roja) x.tr++;
-  })));
-  if(!filas.length) return 'Todavía no figura en ninguna convocatoria.';
+  temporadas.forEach(({t, convs, partidos})=>{
+    // Categorías donde figura en alguna convocatoria de esa temporada, más la
+    // actual si es la temporada activa (para ver también donde no fue citado).
+    const cats = new Set(Object.keys(convs).filter(cat=> Object.values(convs[cat] || {}).some(conv=> conv?.[id])));
+    if(t === temporadaActiva && fichaAbierta[categoriaActual] === id) cats.add(categoriaActual);
+    cats.forEach(cat=> Object.entries(partidos[cat] || {}).forEach(([fecha, p])=>{
+      const conv = convs[cat]?.[fecha];
+      const c = conv?.[id];
+      const estado = estadoEnFecha(p, conv, id);
+      filas.push({t, cat, fecha, p, c: c || {}, estado});
+      const k = `${t} · ${nombreCategoria(cat)} — ${p.competencia || 'Sin competencia'}`;
+      const x = resumen[k] || (resumen[k] = {conv:0, jug:0, tit:0, noCit:0, min:0, goles:0, asist:0, ta:0, tr:0});
+      if(estado === 'No citado') x.noCit++;
+      if(!c) return;
+      x.conv++; if(c.titular) x.tit++;
+      if(estado === 'Titular' || estado === 'Entró') x.jug++;
+      x.min += Number(c.minutos)||0; x.goles += Number(c.goles)||0; x.asist += Number(c.asistencias)||0;
+      if(c.amarilla) x.ta++; if(c.roja) x.tr++;
+    }));
+  });
+  if(!filas.length) return 'Todavía no hay partidos de su categoría ni convocatorias donde figure.';
   filas.sort((a,b)=> b.t.localeCompare(a.t) || a.cat.localeCompare(b.cat) || (+a.fecha) - (+b.fecha));
   return `
     <table>
-      <thead><tr><th>Temporada · categoría / competencia</th><th>Conv.</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
-      <tbody>${Object.entries(resumen).map(([k,x])=>`<tr><td>${esc(k)}</td><td>${x.conv}</td><td>${x.tit}</td><td>${x.min}</td><td>${x.goles}</td><td>${x.asist}</td><td>${x.ta}</td><td>${x.tr}</td></tr>`).join('')}</tbody>
+      <thead><tr><th>Temporada · categoría / competencia</th><th>Conv.</th><th>Jugó</th><th>Titular</th><th>No citado</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
+      <tbody>${Object.entries(resumen).map(([k,x])=>`<tr><td>${esc(k)}</td><td>${x.conv}</td><td>${x.jug}</td><td>${x.tit}</td><td>${x.noCit}</td><td>${x.min}</td><td>${x.goles}</td><td>${x.asist}</td><td>${x.ta}</td><td>${x.tr}</td></tr>`).join('')}</tbody>
     </table>
     <table>
-      <thead><tr><th>Temporada</th><th>Categoría</th><th>Fecha</th><th>Rival</th><th>Resultado</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
-      <tbody>${filas.map(({t, cat, fecha, p, c})=>`<tr>
+      <thead><tr><th>Temporada</th><th>Categoría</th><th>Fecha</th><th>Rival</th><th>Resultado</th><th>Estado</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
+      <tbody>${filas.map(({t, cat, fecha, p, c, estado})=>`<tr>
         <td>${esc(t)}</td><td>${esc(nombreCategoria(cat))}</td><td>${fecha}${p.fechaPartido ? ' ('+esc(fechaCorta(p.fechaPartido))+')' : ''}</td><td>${esc(p.rival)}</td>
-        <td>${p.golesFavor ?? ''} - ${p.golesContra ?? ''} ${badge(desenlace(p))}</td><td>${c.titular?'Sí':''}</td><td>${c.minutos ?? ''}</td>
-        <td>${c.goles||''}</td><td>${c.asistencias||''}</td><td>${c.amarilla?'Sí':''}</td><td>${c.roja?'Sí':''}</td></tr>`).join('')}</tbody>
+        <td>${p.golesFavor ?? ''} - ${p.golesContra ?? ''} ${badge(desenlace(p))}</td><td><span class="estado estado-${sinAcentos(estado).replace(/ /g, '-')}">${estado}</span></td>
+        <td>${c.minutos ?? ''}</td><td>${c.goles||''}</td><td>${c.asistencias||''}</td><td>${c.amarilla?'Sí':''}</td><td>${c.roja?'Sí':''}</td></tr>`).join('')}</tbody>
     </table>`;
 }
 
@@ -1768,7 +2323,7 @@ function partidosHTML(cat, datos, plantel, convocatorias){
       <select id="mLocalia"><option value="Local">Local</option><option value="Visitante">Visitante</option></select>
       <input id="mGF" type="number" placeholder="Goles a favor">
       <input id="mGC" type="number" placeholder="Goles en contra">
-      <select id="mResultado"><option>Victoria</option><option>Empate</option><option>Derrota</option><option>No Disputado</option></select>
+      <select id="mResultado"><option>Por jugar</option><option>Victoria</option><option>Empate</option><option>Derrota</option><option>No Disputado</option></select>
       <button class="accion" onclick="agregarPartido()">Agregar</button>
     </div>`:''}
     <table>
@@ -1788,6 +2343,8 @@ function agregarPartido(){
     golesContra: Number(document.getElementById('mGC').value || 0),
     resultado: document.getElementById('mResultado').value
   };
+  // Fixture cargado por adelantado: sin goles, así no cuenta como 0-0.
+  if(p.resultado === 'Por jugar'){ p.golesFavor = null; p.golesContra = null; }
   // Solo si se cargó: este formulario también sirve para corregir una fecha
   // ya cargada y no debe borrar el día que se haya puesto en "Detalle".
   const fechaPartido = document.getElementById('mFechaPartido').value;
@@ -2185,7 +2742,7 @@ function compararResultado(fecha, manual, liga){
 function calcularTablaPropia(partidosManual){
   let pj=0, pg=0, pe=0, pp=0, gf=0, gc=0;
   Object.values(partidosManual).forEach(p=>{
-    if(!p.resultado || p.resultado === 'No Disputado') return;
+    if(!desenlace(p)) return;
     pj++;
     gf += p.golesFavor || 0;
     gc += p.golesContra || 0;
@@ -2209,7 +2766,7 @@ function recordatoriosLinks(partidosManual, omitidos){
   const tipos = CLUB.linksPartido || [];
   const avisos = [];
   Object.entries(partidosManual).forEach(([fecha,p])=>{
-    if(!p.resultado || p.resultado === 'No Disputado') return;
+    if(!desenlace(p)) return;
     if(omitidos[fecha]) return;
     const links = p.links || {};
     if(!tipos.some(t=>links[t])) avisos.push({fecha, rival:p.rival});
@@ -2412,8 +2969,16 @@ function borrarEntrenamiento(id){
   firebase.initializeApp(window.FIREBASE_CONFIG);
   db = firebase.database();
   auth = firebase.auth();
+  db.ref('.info/connected').on('value', x=>{ conectado = x.val() === true; actualizarAvisoConexion(); });
+  setTimeout(()=>{ _graciaConexion = false; actualizarAvisoConexion(); }, 4000);
   auth.onAuthStateChanged(onAuthCambio);
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 })();
+
+let _graciaConexion = true; // no avisar "sin conexión" en los primeros segundos (todavía está conectando)
+function actualizarAvisoConexion(){
+  document.getElementById('avisoSinConexion').classList.toggle('oculto', conectado || _graciaConexion);
+}
 </script>
 </body>
 </html>

@@ -62,9 +62,10 @@ Copiá `club.example.json` a `club.json` y completá:
   (ver más abajo): `"generic_html_table"` (la liga publica una `<table>`
   HTML común) y `"generic_json_api"` (la liga la dibuja con JavaScript a
   partir de un endpoint JSON propio).
-- **fuentes.gps.adapter**: ídem para GPS — nombre del archivo en
-  `scripts/adapters/gps/`. `"csv_generico"` ya funciona sin configurar nada
-  más (ver ese archivo). `"catapult"` también está terminado (ver abajo).
+- **fuentes.gps.adapter**: ídem para la carga automática de GPS — nombre
+  del archivo en `scripts/adapters/gps/` (la carga desde la app con CSV no
+  necesita esto, ver "GPS" más abajo). `"csv_generico"` lee los CSV de una
+  carpeta con `mapeoColumnas` (ver ese archivo). `"catapult"` también está terminado (ver abajo).
   Los demás (`kinexon`, `statsports`, `wimu`) son stubs: no encontramos
   documentación pública de API confiable para ninguno de los tres — si el
   club nuevo usa alguno, lo más rápido es arrancar con `csv_generico`
@@ -167,7 +168,30 @@ programar nada. Ver el docstring de
 `scripts/adapters/liga/generic_json_api.py` para más detalle (incluye el
 caso de un marcador como texto único en vez de dos campos separados).
 
-## Adaptadores de GPS
+## GPS
+
+Hay dos formas de cargar sesiones; las dos terminan en el mismo lugar
+(`temporadas/<año>/gps/<categoría>/<sesión>` en Firebase, detrás del muro de
+ingreso) y se ven en la pestaña **GPS** y en la ficha de cada jugador:
+
+1. **Desde la app (sin configurar nada):** pestaña GPS → "Cargar sesión
+   desde CSV". Sirve para cualquier proveedor, porque todos exportan CSV. La
+   app adivina qué columna es cada dato, se puede corregir, y lo recuerda
+   para la próxima. Si `fuentes.gps.config.mapeoColumnas` está cargado, lo
+   usa como punto de partida.
+2. **Automática** (`python scripts/scrape_main.py`, con un adaptador por API
+   como `catapult`, o `csv_generico` leyendo una carpeta): sube las sesiones
+   de los últimos 14 días (repetirlo no duplica). Necesita
+   `IMPORTADOR_EMAIL` / `IMPORTADOR_PASSWORD` de una cuenta con rol
+   `"importador"` (se crea igual que la de backup: cuenta desde la app y
+   `users/<uid>/role` = `"importador"` en la consola). Ese rol solo puede
+   escribir sesiones de GPS, nada más.
+
+**Nombres:** se guarda el nombre tal cual lo trae el proveedor y la app lo
+vincula con el plantel sola (nombre y apellido, inicial + apellido, sin
+importar tildes ni mayúsculas). Los que no reconoce aparecen "sin vincular"
+con un selector para elegir el jugador una vez; queda guardado en
+`gpsAlias/<categoría>` para las cargas siguientes.
 
 ### Catapult
 
@@ -236,3 +260,19 @@ antes un backup del estado actual por las dudas.
 
 Si el club pasa al plan pago de Firebase (Blaze), también puede activar los
 backups automáticos de la propia consola.
+
+# App instalable y uso sin señal
+
+- **Instalar en el celular:** abrir el sitio en Chrome (Android) → menú →
+  "Instalar app" / en iPhone, Safari → Compartir → "Agregar a inicio". Queda
+  con ícono propio y pantalla completa. Para que muestre el nombre y el
+  escudo del club, editar `manifest.json` (`name`, `short_name`) y
+  reemplazar `icons/icon-192.png` / `icons/icon-512.png` (cuadrados, con el
+  dibujo dentro del 60% central).
+- **Sin señal:** cada pantalla que se abre queda guardada en el dispositivo
+  (por usuario). Si después no hay conexión, la app abre igual y muestra lo
+  último guardado con un aviso abajo. Lo que se cargue sin señal se guarda
+  cuando vuelve la conexión **si no se cierra la app** en el medio. Al tocar
+  "Salir" se borra la copia del dispositivo (incluye datos médicos).
+- Si se cambia `sw.js`, subir el número de `CACHE` para que los celulares
+  tomen la versión nueva.

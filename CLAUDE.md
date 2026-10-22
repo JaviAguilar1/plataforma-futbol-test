@@ -28,6 +28,68 @@ aparte, sin tocarse) para poder ofrecérsela a otro club en 2027.
 
 # Estado del proyecto
 
+**2026-10-22 — "Por jugar" y próximo partido.** El resultado solo admitía
+Victoria/Empate/Derrota/No disputado: no se podía cargar el fixture por
+adelantado ni armar la convocatoria antes de jugar sin inventar un
+resultado (y un pendiente con 0-0 contaba como empate). Ahora "Por jugar"
+es la opción por defecto, guarda los goles vacíos y queda afuera de
+estadísticas, tabla propia y recordatorios. Inicio muestra el **próximo
+partido** (primera fecha "Por jugar"): día, rival, posiciones de los dos en
+la tabla cargada, si hay convocatoria y quiénes no pueden jugar por
+tarjetas. Probado con la fecha 11 (queda cargada como demo).
+
+**2026-10-22 — App instalable y uso sin señal (de Tigre, generalizado).**
+`manifest.json` + `sw.js` + íconos genéricos (`icons/`, sin marcas de
+club). El service worker sirve la app desde la red y, sin señal, desde su
+copia; los datos de Firebase nunca pasan por él. **Copia local de datos**
+en IndexedDB: `suscribirRefs` guarda cada valor y muestra la copia al
+instante hasta que llega Firebase; `leerUnaVez` (temporadas, historial,
+GPS de la ficha, buscador) no se cuelga sin señal. La cuenta propia
+también se lee de la copia, así la app abre offline. Copia por usuario,
+borrada al "Salir". Aviso "Sin conexión" abajo (con 4 s de gracia al
+abrir). `sincronizarRolesConfig` ya no se espera (sin señal colgaba la
+entrada del admin). Probado: SW y manifest registrados, copia llena al
+navegar, Firebase desconectado (`goOffline`) → aviso + GPS, historial y
+GPS de la ficha desde la copia; reconectar saca el aviso; "Salir" borra la
+copia (36 → 0) y se puede volver a entrar. Sin probar: el cartel de
+instalación en un celular real.
+
+**2026-10-22 — Ficha completa y GPS en pantalla.**
+- **Ficha**: estado del jugador en cada partido de su categoría (Titular /
+  Entró / No ingresó / No citado / Sin convocatoria / Por jugar / No
+  disputado), con "Jugó" y "No citado" en el resumen; incluye las
+  categorías donde jugó en cada temporada. **Buscador de jugadores** en el
+  nav (todas las categorías visibles, sin tildes, abre la ficha).
+  **Comparar** en Estadísticas: marcar 2+ jugadores → tabla lado a lado con
+  el mejor valor resaltado (incluye minutos por partido y goles cada 90).
+- **GPS** (pestaña nueva, por categoría y temporada): sesiones en
+  `temporadas/<año>/gps/<cat>/<sesión>` con el nombre tal cual lo trae el
+  proveedor; el vínculo con el plantel se resuelve al mostrar
+  (`resolverJugadorGps`: alias en `gpsAlias/<cat>` > nombre y apellido >
+  inicial + apellido > apellido único), así la carga desde la app y la
+  automática andan igual. Vista por sesión (solo columnas con datos, mejor
+  valor resaltado, promedio del equipo), promedios por jugador (partidos /
+  entrenamientos / todo) y sección GPS en la ficha. **Carga desde CSV en la
+  app**: detecta separador, coma decimal y "mm:ss", adivina las columnas
+  (recordando el último mapeo, o el de `club.json`), saltea filas de
+  promedio del proveedor y pide vincular solo los nombres que no reconoce.
+- **Importador automático** (`scrape_main.py`): sube a Firebase con una
+  cuenta de rol `importador` (las reglas solo le dejan escribir GPS) en vez
+  de escribir `data/gps.json` en el repo — ese archivo era público (se
+  salteaba el muro) y además se pisaba con los últimos 14 días, perdiendo
+  la historia. Scripts comparten `scripts/firebase_rest.py`.
+- **Bug**: `python scripts/scrape_main.py` (el comando documentado) se
+  rompía con `No module named 'scripts'`; ahora agrega la raíz al path.
+  `csv_generico` guardaba como texto 4 métricas numéricas.
+- Probado: CSV tipo Catapult con `;`, coma decimal, "92:30", nombres en
+  distintos formatos (3 González distinguidos por nombre), fila "Team
+  Average" salteada, 2 sin vincular correctos (uno pasó de categoría);
+  valores convertidos bien; desaceleración negativa comparada por
+  magnitud; ficha con GPS; importador con cuenta temporal (escribe GPS, la
+  base le rechaza partidos/plantel/rol/lectura; repetir no duplica; la
+  sesión aparece con nombres reconocidos). Cuenta temporal borrada. Quedó
+  una sesión "Datos de ejemplo" (Cuarta, 16-05-26) para el demo.
+
 **2026-10-22 — Amarillas acumuladas y backup privado (de Tigre).**
 - **Amarillas por ciclo** (`situacionTarjetas`, mismo criterio que Tigre):
   se cuentan en orden de fecha, el ciclo vuelve a cero al llegar a la

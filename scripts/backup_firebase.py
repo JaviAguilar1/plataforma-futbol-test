@@ -16,26 +16,11 @@ Variables de entorno:
 import datetime
 import json
 import os
-import re
 import sys
 import urllib.error
-import urllib.request
 from pathlib import Path
 
-RAIZ_REPO = Path(__file__).resolve().parent.parent
-
-
-def leer_config_firebase():
-    texto = (RAIZ_REPO / "config" / "firebase.js").read_text(encoding="utf-8")
-    campo = lambda k: re.search(rf'{k}\s*:\s*"([^"]+)"', texto).group(1)
-    return campo("apiKey"), campo("databaseURL").rstrip("/"), campo("projectId")
-
-
-def pedir_json(url, cuerpo=None):
-    datos = json.dumps(cuerpo).encode("utf-8") if cuerpo is not None else None
-    req = urllib.request.Request(url, data=datos, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+from firebase_rest import RAIZ_REPO, leer_config_firebase, login, pedir_json
 
 
 def fallar(mensaje):
@@ -55,10 +40,7 @@ def main():
     conservar = int(os.environ.get("BACKUP_CONSERVAR") or 60)
 
     try:
-        token = pedir_json(
-            f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={api_key}",
-            {"email": email, "password": password, "returnSecureToken": True},
-        )["idToken"]
+        token = login(api_key, email, password)
         base = pedir_json(f"{db_url}/.json?auth={token}")
     except urllib.error.HTTPError as e:
         detalle = " ".join(e.read().decode("utf-8", errors="replace").split())[:300]
