@@ -169,3 +169,12 @@ patrón que ya usa Tigre con sus credenciales de futdetail).
 
 Copiá `firebase.example.js` a `firebase.js` con el `firebaseConfig` que te da
 la consola de Firebase para el proyecto de ESE club.
+
+# Reglas de seguridad de Firebase
+
+`firebase/rules.example.json` se pega a mano en la consola de Firebase
+(Realtime Database → Reglas → Publicar). **Cada vez que se actualiza
+`index.html` a una versión que suma un nodo nuevo** (ej. `informes`), hay que
+volver a publicar las reglas: sin la regla, Firebase rechaza la lectura y la
+escritura de ese nodo (la app lo avisa con un cartel rojo abajo, y acciones
+que leen varios nodos — como "Pasar de categoría" — no se completan).
