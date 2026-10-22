@@ -30,27 +30,11 @@
       ".read": true,
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
     },
-    "partidos": {
+    "temporadas": {
       ".read": true,
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
     },
-    "convocatorias": {
-      ".read": true,
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
-    },
-    "documentos": {
-      ".read": true,
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
-    },
-    "entrenamientos": {
-      ".read": true,
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
-    },
-    "tablaPosiciones": {
-      ".read": true,
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
-    },
-    "recordatoriosOmitidos": {
+    "temporadasInfo": {
       ".read": true,
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
     }

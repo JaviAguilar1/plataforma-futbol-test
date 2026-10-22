@@ -103,9 +103,10 @@
   <div id="avisoConfig" class="aviso oculto"></div>
 
   <div class="fila-form oculto" id="selectorCategoriaWrap">
-    <label style="flex:none;">Categoría</label>
-    <select id="selectorCategoria"></select>
+    <span id="wrapTemporada" style="display:contents;"><label style="flex:none;">Temporada</label><select id="selectorTemporada" style="flex:none;min-width:120px;"></select></span>
+    <span id="wrapCategoria" style="display:contents;"><label style="flex:none;">Categoría</label><select id="selectorCategoria"></select></span>
   </div>
+  <div id="avisoTemporada" class="aviso oculto"></div>
 
   <section id="vistaInicio"></section>
   <section id="vistaPlantel" class="oculto"></section>
@@ -178,6 +179,13 @@ let filtroCompetencia = {};  // categoriaId -> competencia elegida en Estadísti
 let fixtureGrupo = null, fixtureCompetencia = '';
 let filtrosReportes = {libDesde:'', libHasta:'', libPos:'', conDesde:'', conHasta:''};
 const NODOS_POR_JUGADOR = ['lesiones', 'contratos', 'prestamos', 'multimedia', 'informes'];
+// Lo que es de una temporada (como en futdetail) se guarda bajo
+// temporadas/<año>/...; el plantel y lo del jugador (médico, contratos,
+// préstamos, multimedia, informes) es del club y no cambia de año.
+const NODOS_DE_TEMPORADA = ['partidos', 'convocatorias', 'tablaPosiciones', 'recordatoriosOmitidos', 'entrenamientos', 'documentos'];
+let temporadaActiva = null;  // la vigente del club (temporadasInfo/activa)
+let temporadaActual = null;  // la que se está mirando
+let temporadasLista = [];
 
 // Todo dato cargado por usuarios pasa por esc() antes de ir a innerHTML: sin
 // esto, un texto con comillas se corta dentro de value="..." y al re-guardar
@@ -235,12 +243,52 @@ function mostrarToast(texto){
   _toastTimer = setTimeout(()=>el.classList.add('oculto'), 7000);
 }
 
+function rutaReal(ruta){
+  return NODOS_DE_TEMPORADA.includes(ruta.split('/')[0]) ? `temporadas/${temporadaActual}/${ruta}` : ruta;
+}
+function dbRef(ruta){ return db.ref(rutaReal(ruta)); }
+
+async function cargarTemporadas(){
+  const info = db ? ((await db.ref('temporadasInfo').once('value')).val() || {}) : {};
+  temporadaActiva = String(info.activa || CLUB.temporada.anio || new Date().getFullYear());
+  temporadasLista = [...new Set([temporadaActiva, ...Object.keys(info.lista || {})])].sort().reverse();
+  temporadaActual = temporadaActiva;
+  const sel = document.getElementById('selectorTemporada');
+  sel.innerHTML = temporadasLista.map(t=>`<option value="${esc(t)}">${esc(t)}${t===temporadaActiva?' (activa)':''}</option>`).join('');
+  sel.value = temporadaActual;
+  sel.onchange = ()=>{ temporadaActual = sel.value; renderVistaActual(); };
+}
+
+// Admin: arrancar una temporada nueva. No mueve ni borra nada: la anterior
+// queda tal cual bajo temporadas/<año> y se sigue viendo desde el selector.
+async function iniciarTemporada(){
+  const nueva = document.getElementById('nuevaTemporada').value.trim();
+  if(!nueva || nueva === temporadaActiva) return;
+  if(!confirm(`¿Pasar a la temporada ${nueva}?\n\nPartidos, convocatorias, tabla, entrenamientos y documentos arrancan vacíos. La temporada ${temporadaActiva} queda guardada y se puede ver eligiéndola arriba.\n\nEl plantel, los datos médicos, contratos, préstamos, multimedia e informes no cambian (los ascensos se hacen con "Pasar de categoría" en Plantel).`)) return;
+  await db.ref('temporadasInfo').update({activa: nueva, ['lista/'+nueva]: true, ['lista/'+temporadaActiva]: true});
+  location.reload();
+}
+
+function temporadaAdminHTML(){
+  if(!esAdmin()) return '';
+  const sugerida = String((parseInt(temporadaActiva) || new Date().getFullYear()) + 1);
+  return `
+  <div class="card">
+    <h2>Temporada</h2>
+    <p class="nota">Temporada activa: <b>${esc(temporadaActiva)}</b>. Al iniciar una nueva, los partidos, convocatorias, tabla, entrenamientos y documentos arrancan vacíos y la anterior queda para consultar desde el selector de arriba.</p>
+    <div class="fila-form">
+      <input id="nuevaTemporada" value="${esc(sugerida)}" style="flex:none;width:110px;">
+      <button class="secundario" onclick="iniciarTemporada()" style="flex:none;">Iniciar temporada nueva</button>
+    </div>
+  </div>`;
+}
+
 function suscribirRefs(listaRefs, pares){
   _listasRefs.add(listaRefs);
   listaRefs.forEach(r=>r.ref.off('value', r.cb));
   listaRefs.length = 0;
   pares.forEach(([ruta, onDato])=>{
-    const ref = db.ref(ruta);
+    const ref = dbRef(ruta);
     const cb = snap => onDato(snap.val() || {});
     ref.on('value', cb);
     listaRefs.push({ref, cb});
@@ -324,7 +372,7 @@ function onAuthCambio(user){
     renderVistaActual();
     return;
   }
-  db.ref('users/'+user.uid+'/role').once('value').then(snap=>{
+  dbRef('users/'+user.uid+'/role').once('value').then(snap=>{
     rolActual = snap.val();
     actualizarEstadoSesion();
     renderVistaActual();
@@ -361,11 +409,19 @@ document.getElementById('nav').addEventListener('click', e=>{
 });
 
 const VISTAS_DE_TODO_EL_CLUB = ['fixture', 'reportes'];
+const VISTAS_SIN_TEMPORADA = ['plantel', 'reportes'];
 function renderVistaActual(){
   apagarSuscripciones();
   document.querySelectorAll('main > section').forEach(s=>s.classList.add('oculto'));
   document.getElementById('vistaLogin').classList.add('oculto');
-  document.getElementById('selectorCategoriaWrap').classList.toggle('oculto', VISTAS_DE_TODO_EL_CLUB.includes(vistaActual));
+  const sinTemporada = VISTAS_SIN_TEMPORADA.includes(vistaActual);
+  const sinCategoria = VISTAS_DE_TODO_EL_CLUB.includes(vistaActual);
+  document.getElementById('selectorCategoriaWrap').classList.toggle('oculto', sinTemporada && sinCategoria);
+  document.getElementById('wrapTemporada').classList.toggle('oculto', sinTemporada);
+  document.getElementById('wrapCategoria').classList.toggle('oculto', sinCategoria);
+  const aviso = document.getElementById('avisoTemporada');
+  aviso.classList.toggle('oculto', sinTemporada || temporadaActual === temporadaActiva);
+  aviso.textContent = `Estás viendo la temporada ${temporadaActual}. La temporada activa es ${temporadaActiva}.`;
   ({
     inicio: renderInicio, plantel: renderPlantel, partidos: renderPartidos, estadisticas: renderEstadisticas,
     fixture: renderFixture, tabla: renderTabla, confiabilidad: renderConfiabilidad, recursos: renderRecursos,
@@ -466,7 +522,7 @@ function inicioHTML(d){
 
   return `
   <div class="card">
-    <h2>Resumen — ${esc(nombreCategoria(cat))}</h2>
+    <h2>Resumen — ${esc(nombreCategoria(cat))} ${esc(temporadaActual)}</h2>
     ${kpisHTML(r)}
     <div class="subtitulo">Últimos partidos</div>
     ${ultimos.length ? `<table><tbody>${ultimos.map(([f,p])=>`<tr>
@@ -502,7 +558,8 @@ function inicioHTML(d){
       const cumpleAnios = Number(hoy.slice(0,4)) - Number(j.fechaNacimiento.slice(0,4));
       return `<tr${diaN===dia?' style="font-weight:700;"':''}><td>${esc(nombreCompleto(j))}</td><td>${esc(nombreCategoria(c))}</td><td>${diaN}/${mes}</td><td>${cumpleAnios} años</td></tr>`;
     }).join('')}</tbody></table>` : '<p class="nota">Nadie cumple años este mes (o falta cargar la fecha de nacimiento).</p>'}
-  </div>`;
+  </div>
+  ${temporadaAdminHTML()}`;
 }
 
 // ---------- Estadísticas (por categoría) ----------
@@ -539,7 +596,7 @@ function estadisticasHTML(cat, partidos, convocatorias, plantel){
     </tr>`).join('');
   return `
   <div class="card">
-    <h2>Estadísticas — ${esc(nombreCategoria(cat))}</h2>
+    <h2>Estadísticas — ${esc(nombreCategoria(cat))} ${esc(temporadaActual)}</h2>
     <div class="fila-form"><label style="flex:none;">Competencia</label>
       <select onchange="cambiarFiltroCompetencia(this.value)"><option value="">Todas</option>${comps.map(c=>`<option value="${esc(c)}" ${c===comp?'selected':''}>${esc(c)}</option>`).join('')}</select>
     </div>
@@ -617,7 +674,7 @@ function fixtureHTML(todos){
   const r = resumenEquipo(jugados);
   return `
   <div class="card">
-    <h2>Fixture general — ${esc(grupo.nombre)}</h2>
+    <h2>Fixture general — ${esc(grupo.nombre)} ${esc(temporadaActual)}</h2>
     <div class="fila-form">
       ${grupos.length > 1 ? `<select onchange="cambiarFixture(this.value, '')">${grupos.map(g=>`<option value="${g.id}" ${g.id===grupo.id?'selected':''}>${esc(g.nombre)}</option>`).join('')}</select>` : ''}
       <select onchange="cambiarFixture('${grupo.id}', this.value)"><option value="">Todas las competencias</option>${comps.map(c=>`<option value="${esc(c)}" ${c===comp?'selected':''}>${esc(c)}</option>`).join('')}</select>
@@ -829,7 +886,7 @@ async function pasarJugadores(){
   if(!ids.length){ alert('Marcá al menos un jugador.'); return; }
   if(!puedeEditar(destino)){ alert('Tu rol no puede editar la categoría destino.'); return; }
   if(!confirm(`¿Pasar ${ids.length} jugador(es) de ${nombreCategoria(origen)} a ${nombreCategoria(destino)}? Se mueven también sus datos médicos, contratos, préstamos, multimedia e informes.`)) return;
-  const leer = n => db.ref(n+'/'+origen).once('value').then(s=>s.val()||{});
+  const leer = n => dbRef(n+'/'+origen).once('value').then(s=>s.val()||{});
   const plantel = await leer('plantel');
   const up = {};
   ids.forEach(id=>{ up[`plantel/${destino}/${id}`] = plantel[id]; up[`plantel/${origen}/${id}`] = null; });
@@ -840,9 +897,12 @@ async function pasarJugadores(){
       up[`${nodo}/${origen}/${rid}`] = null;
     });
   }
-  Object.entries(await leer('convocatorias')).forEach(([fecha, conv])=> ids.forEach(id=>{
-    if(conv?.[id] && !conv[id].jugador) up[`convocatorias/${origen}/${fecha}/${id}/jugador`] = nombreCompleto(plantel[id]);
-  }));
+  for(const t of temporadasLista){
+    const convs = (await db.ref(`temporadas/${t}/convocatorias/${origen}`).once('value')).val() || {};
+    Object.entries(convs).forEach(([fecha, conv])=> ids.forEach(id=>{
+      if(conv?.[id] && !conv[id].jugador) up[`temporadas/${t}/convocatorias/${origen}/${fecha}/${id}/jugador`] = nombreCompleto(plantel[id]);
+    }));
+  }
   db.ref().update(up);
 }
 
@@ -913,36 +973,37 @@ function fichaExtraHTML(id, j){
 // Recorre las convocatorias de TODAS las categorías: un jugador que pasó de
 // categoría conserva su historial completo (el id no cambia con el pase).
 function cargarHistorialJugador(id){
-  Promise.all([db.ref('convocatorias').once('value'), db.ref('partidos').once('value')]).then(([sc, sp])=>{
+  const leer = (t, nodo) => db.ref(`temporadas/${t}/${nodo}`).once('value').then(s=>s.val()||{});
+  Promise.all(temporadasLista.map(t=> Promise.all([leer(t, 'convocatorias'), leer(t, 'partidos')]))).then(porTemporada=>{
     const el = document.getElementById('historial_'+id);
-    if(el) el.innerHTML = historialJugadorHTML(id, sc.val()||{}, sp.val()||{});
+    if(el) el.innerHTML = historialJugadorHTML(id, temporadasLista.map((t,i)=>({t, convs: porTemporada[i][0], partidos: porTemporada[i][1]})));
   });
 }
 
-function historialJugadorHTML(id, convs, partidos){
+function historialJugadorHTML(id, temporadas){
   const filas = [], resumen = {};
-  Object.entries(convs).forEach(([cat, porFecha])=> Object.entries(porFecha||{}).forEach(([fecha, conv])=>{
+  temporadas.forEach(({t, convs, partidos})=> Object.entries(convs).forEach(([cat, porFecha])=> Object.entries(porFecha||{}).forEach(([fecha, conv])=>{
     const c = conv?.[id];
     if(!c) return;
     const p = partidos[cat]?.[fecha] || {};
-    filas.push({cat, fecha, p, c});
-    const k = nombreCategoria(cat) + ' — ' + (p.competencia || 'Sin competencia');
+    filas.push({t, cat, fecha, p, c});
+    const k = `${t} · ${nombreCategoria(cat)} — ${p.competencia || 'Sin competencia'}`;
     const x = resumen[k] || (resumen[k] = {conv:0, tit:0, min:0, goles:0, asist:0, ta:0, tr:0});
     x.conv++; if(c.titular) x.tit++;
     x.min += Number(c.minutos)||0; x.goles += Number(c.goles)||0; x.asist += Number(c.asistencias)||0;
     if(c.amarilla) x.ta++; if(c.roja) x.tr++;
-  }));
+  })));
   if(!filas.length) return 'Todavía no figura en ninguna convocatoria.';
-  filas.sort((a,b)=> a.cat.localeCompare(b.cat) || (+a.fecha) - (+b.fecha));
+  filas.sort((a,b)=> b.t.localeCompare(a.t) || a.cat.localeCompare(b.cat) || (+a.fecha) - (+b.fecha));
   return `
     <table>
-      <thead><tr><th>Categoría / competencia</th><th>Conv.</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
+      <thead><tr><th>Temporada · categoría / competencia</th><th>Conv.</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
       <tbody>${Object.entries(resumen).map(([k,x])=>`<tr><td>${esc(k)}</td><td>${x.conv}</td><td>${x.tit}</td><td>${x.min}</td><td>${x.goles}</td><td>${x.asist}</td><td>${x.ta}</td><td>${x.tr}</td></tr>`).join('')}</tbody>
     </table>
     <table>
-      <thead><tr><th>Categoría</th><th>Fecha</th><th>Rival</th><th>Resultado</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
-      <tbody>${filas.map(({cat, fecha, p, c})=>`<tr>
-        <td>${esc(nombreCategoria(cat))}</td><td>${fecha}${p.fechaPartido ? ' ('+esc(fechaCorta(p.fechaPartido))+')' : ''}</td><td>${esc(p.rival)}</td>
+      <thead><tr><th>Temporada</th><th>Categoría</th><th>Fecha</th><th>Rival</th><th>Resultado</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
+      <tbody>${filas.map(({t, cat, fecha, p, c})=>`<tr>
+        <td>${esc(t)}</td><td>${esc(nombreCategoria(cat))}</td><td>${fecha}${p.fechaPartido ? ' ('+esc(fechaCorta(p.fechaPartido))+')' : ''}</td><td>${esc(p.rival)}</td>
         <td>${p.golesFavor ?? ''} - ${p.golesContra ?? ''} ${badge(desenlace(p))}</td><td>${c.titular?'Sí':''}</td><td>${c.minutos ?? ''}</td>
         <td>${c.goles||''}</td><td>${c.asistencias||''}</td><td>${c.amarilla?'Sí':''}</td><td>${c.roja?'Sí':''}</td></tr>`).join('')}</tbody>
     </table>`;
@@ -951,7 +1012,7 @@ function historialJugadorHTML(id, convs, partidos){
 function guardarFicha(id){
   const v = suf => document.getElementById('fx_'+suf+'_'+id).value.trim();
   if(!v('nombre') || !v('apellido')){ alert('Nombre y apellido no pueden quedar vacíos.'); return; }
-  db.ref('plantel/'+categoriaActual+'/'+id).update({
+  dbRef('plantel/'+categoriaActual+'/'+id).update({
     nombre: v('nombre'),
     apellido: v('apellido'),
     posicion: v('pos'),
@@ -1008,12 +1069,12 @@ function agregarJugador(){
     peso: document.getElementById('pPeso').value
   };
   if(!j.nombre || !j.apellido) return;
-  db.ref('plantel/'+categoriaActual).push(j);
+  dbRef('plantel/'+categoriaActual).push(j);
 }
 
 function borrarJugador(id){
   if(!confirm('¿Borrar jugador?')) return;
-  db.ref('plantel/'+categoriaActual+'/'+id).remove();
+  dbRef('plantel/'+categoriaActual+'/'+id).remove();
 }
 
 // ---------- Datos médicos (consultas y lesiones) ----------
@@ -1053,9 +1114,9 @@ function lesionesHTML(plantel, lesiones){
       <td>${esc(l.localizacion)}</td>
       <td>${esc(l.severidad)}</td>
       <td>${esc(fechaCorta(l.fechaEstimadaRecuperacion))}</td>
-      <td>${lesion ? (editar ? `<input type="date" value="${esc(l.fechaRecuperacion)}" onchange="db.ref('${ruta}/fechaRecuperacion').set(this.value||null)">` : esc(fechaCorta(l.fechaRecuperacion))) : ''}</td>
+      <td>${lesion ? (editar ? `<input type="date" value="${esc(l.fechaRecuperacion)}" onchange="dbRef('${ruta}/fechaRecuperacion').set(this.value||null)">` : esc(fechaCorta(l.fechaRecuperacion))) : ''}</td>
       <td>${dias ?? ''}${desvio ? ` <span style="color:#9aa4bd;font-size:.78rem;">(${desvio>0?'+':''}${desvio} vs. estimada)</span>` : ''}</td>
-      <td>${lesion ? (editar ? `<select onchange="db.ref('${ruta}/estadoTratamiento').set(this.value||null)">${opcionesSelect(ESTADOS_TRATAMIENTO, l.estadoTratamiento)}</select>` : esc(l.estadoTratamiento)) : ''}</td>
+      <td>${lesion ? (editar ? `<select onchange="dbRef('${ruta}/estadoTratamiento').set(this.value||null)">${opcionesSelect(ESTADOS_TRATAMIENTO, l.estadoTratamiento)}</select>` : esc(l.estadoTratamiento)) : ''}</td>
       <td>${l.link?`<a href="${url(l.link)}" target="_blank">Abrir</a>`:''}</td>
       <td>${esc(l.observaciones)}</td>
       ${editar?`<td><button class="peligro" onclick="borrarLesion('${id}')">Borrar</button></td>`:''}
@@ -1118,12 +1179,12 @@ function agregarLesion(){
       fechaEstimadaRecuperacion: v('lFechaRecup'), estadoTratamiento: 'En tratamiento',
     });
   }
-  db.ref('lesiones/'+categoriaActual).push(l);
+  dbRef('lesiones/'+categoriaActual).push(l);
 }
 
 function borrarLesion(id){
   if(!confirm('¿Borrar lesión?')) return;
-  db.ref('lesiones/'+categoriaActual+'/'+id).remove();
+  dbRef('lesiones/'+categoriaActual+'/'+id).remove();
 }
 
 // ---------- Contratos ----------
@@ -1177,12 +1238,12 @@ function agregarContrato(){
     link: document.getElementById('cLink').value.trim(),
   };
   if(!c.jugadorId || !c.fechaFin) return;
-  db.ref('contratos/'+categoriaActual).push(c);
+  dbRef('contratos/'+categoriaActual).push(c);
 }
 
 function borrarContrato(id){
   if(!confirm('¿Borrar contrato?')) return;
-  db.ref('contratos/'+categoriaActual+'/'+id).remove();
+  dbRef('contratos/'+categoriaActual+'/'+id).remove();
 }
 
 // ---------- Préstamos / Convocatorias a selección ----------
@@ -1237,7 +1298,7 @@ function agregarPrestamo(){
     link: document.getElementById('prLink').value.trim(),
   };
   if(!p.jugadorId) return;
-  db.ref('prestamos/'+categoriaActual).push(p);
+  dbRef('prestamos/'+categoriaActual).push(p);
 }
 
 // Notas de seguimiento de un jugador a préstamo (visitas, informes del club destino).
@@ -1281,16 +1342,16 @@ function agregarNotaPrestamo(prestamoId){
     url: document.getElementById('npUrl').value.trim(),
   };
   if(!n.titulo && !n.observaciones) return;
-  db.ref(`prestamos/${categoriaActual}/${prestamoId}/notas`).push(n);
+  dbRef(`prestamos/${categoriaActual}/${prestamoId}/notas`).push(n);
 }
 function borrarNotaPrestamo(prestamoId, notaId){
   if(!confirm('¿Borrar nota?')) return;
-  db.ref(`prestamos/${categoriaActual}/${prestamoId}/notas/${notaId}`).remove();
+  dbRef(`prestamos/${categoriaActual}/${prestamoId}/notas/${notaId}`).remove();
 }
 
 function borrarPrestamo(id){
   if(!confirm('¿Borrar este registro?')) return;
-  db.ref('prestamos/'+categoriaActual+'/'+id).remove();
+  dbRef('prestamos/'+categoriaActual+'/'+id).remove();
 }
 
 // ---------- Multimedia (clips individuales por jugador) ----------
@@ -1335,12 +1396,12 @@ function agregarMultimedia(){
     observaciones: document.getElementById('mmObs').value.trim(),
   };
   if(!m.jugadorId) return;
-  db.ref('multimedia/'+categoriaActual).push(m);
+  dbRef('multimedia/'+categoriaActual).push(m);
 }
 
 function borrarMultimedia(id){
   if(!confirm('¿Borrar este registro?')) return;
-  db.ref('multimedia/'+categoriaActual+'/'+id).remove();
+  dbRef('multimedia/'+categoriaActual+'/'+id).remove();
 }
 
 // ---------- Informes por jugador (trimestral / final / captación) ----------
@@ -1389,11 +1450,11 @@ function agregarInforme(){
     url: document.getElementById('infUrl').value.trim(),
   };
   if(!i.jugadorId) return;
-  db.ref('informes/'+categoriaActual).push(i);
+  dbRef('informes/'+categoriaActual).push(i);
 }
 function borrarInforme(id){
   if(!confirm('¿Borrar informe?')) return;
-  db.ref('informes/'+categoriaActual+'/'+id).remove();
+  dbRef('informes/'+categoriaActual+'/'+id).remove();
 }
 
 // ---------- Partidos / Resultados ----------
@@ -1475,12 +1536,12 @@ function agregarPartido(){
   // ya cargada y no debe borrar el día que se haya puesto en "Detalle".
   const fechaPartido = document.getElementById('mFechaPartido').value;
   if(fechaPartido) p.fechaPartido = fechaPartido;
-  db.ref('partidos/'+categoriaActual+'/'+fecha).update(p);
+  dbRef('partidos/'+categoriaActual+'/'+fecha).update(p);
 }
 
 function borrarPartido(fecha){
   if(!confirm('¿Borrar partido?')) return;
-  db.ref('partidos/'+categoriaActual+'/'+fecha).remove();
+  dbRef('partidos/'+categoriaActual+'/'+fecha).remove();
 }
 
 function toggleDetallePartido(fecha){
@@ -1544,7 +1605,7 @@ function guardarDetallePartido(fecha){
   });
   const penF = document.getElementById('pd_penF_'+fecha).value;
   const penC = document.getElementById('pd_penC_'+fecha).value;
-  db.ref('partidos/'+categoriaActual+'/'+fecha).update({
+  dbRef('partidos/'+categoriaActual+'/'+fecha).update({
     fechaPartido: v('pd_fechaPartido_'+fecha),
     competencia: v('pd_competencia_'+fecha),
     arbitro: v('pd_arbitro_'+fecha),
@@ -1633,7 +1694,7 @@ function abrirVentanaPDF(titulo, cuerpoHtml){
 }
 
 function exportarFichaJugador(id){
-  db.ref('plantel/'+categoriaActual+'/'+id).once('value').then(snap=>{
+  dbRef('plantel/'+categoriaActual+'/'+id).once('value').then(snap=>{
     const j = snap.val();
     if(!j) return;
     const c = j.contacto || {};
@@ -1656,9 +1717,9 @@ function exportarFichaJugador(id){
 
 function exportarCitacionPDF(cat, fecha){
   Promise.all([
-    db.ref('plantel/'+cat).once('value'),
-    db.ref('convocatorias/'+cat+'/'+fecha).once('value'),
-    db.ref('partidos/'+cat+'/'+fecha).once('value'),
+    dbRef('plantel/'+cat).once('value'),
+    dbRef('convocatorias/'+cat+'/'+fecha).once('value'),
+    dbRef('partidos/'+cat+'/'+fecha).once('value'),
   ]).then(([spPlantel, spConv, spPartido])=>{
     const plantel = spPlantel.val() || {};
     const conv = spConv.val() || {};
@@ -1707,7 +1768,7 @@ function guardarConvocatoria(cat, fecha){
       destacado: document.getElementById('cv_destacado_'+id).checked,
     };
   });
-  db.ref('convocatorias/'+cat+'/'+fecha).set(out);
+  dbRef('convocatorias/'+cat+'/'+fecha).set(out);
 }
 
 // ---------- Tabla de posiciones ----------
@@ -1737,6 +1798,10 @@ async function renderTabla(){
 
   if(adapter !== 'manual'){
     suscribirRefs(_refsTabla, []);
+    if(temporadaActual !== temporadaActiva){
+      sec.innerHTML = '<div class="card"><p>La tabla que trae la liga automáticamente es solo la de la temporada activa.</p></div>';
+      return;
+    }
     const liga = await cargarTablaLiga();
     const filas = (liga.categorias && liga.categorias[categoriaActual]) || [];
     sec.innerHTML = tablaHTML(filas, adapter);
@@ -1803,7 +1868,7 @@ function agregarFilaTabla(){
     pts: Number(document.getElementById('tPts').value||0)
   };
   if(!fila.equipo) return;
-  const ref = db.ref('tablaPosiciones/'+categoriaActual);
+  const ref = dbRef('tablaPosiciones/'+categoriaActual);
   ref.once('value').then(snap=>{
     const actual = snap.val() || [];
     actual.push(fila);
@@ -1813,7 +1878,7 @@ function agregarFilaTabla(){
 
 function borrarFilaTabla(i){
   if(!confirm('¿Borrar fila?')) return;
-  const ref = db.ref('tablaPosiciones/'+categoriaActual);
+  const ref = dbRef('tablaPosiciones/'+categoriaActual);
   ref.once('value').then(snap=>{
     const actual = snap.val() || [];
     actual.splice(i,1);
@@ -1828,6 +1893,10 @@ async function renderConfiabilidad(){
   sec.classList.remove('oculto');
   if(!categoriaActual){ sec.innerHTML = '<p>No hay categorías configuradas.</p>'; return; }
   if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver esto.</p>'; return; }
+  if(temporadaActual !== temporadaActiva){
+    sec.innerHTML = '<div class="card"><p>La comparación con la liga solo aplica a la temporada activa.</p></div>';
+    return;
+  }
   const cat = categoriaActual;
   const liga = await cargarTablaLiga();
   const fixtureLiga = (liga.fixture && liga.fixture[cat]) || [];
@@ -1887,7 +1956,7 @@ function recordatoriosLinks(partidosManual, omitidos){
 }
 
 function omitirRecordatorio(fecha){
-  db.ref('recordatoriosOmitidos/'+categoriaActual+'/'+fecha).set(true);
+  dbRef('recordatoriosOmitidos/'+categoriaActual+'/'+fecha).set(true);
 }
 
 function confiabilidadHTML(cat, partidosManual, fixtureLiga, tablaLiga, omitidos){
@@ -1994,12 +2063,12 @@ function agregarDocumento(){
     url: document.getElementById('docUrl').value.trim(),
   };
   if(!d.titulo) return;
-  db.ref('documentos/'+categoriaActual).push(d);
+  dbRef('documentos/'+categoriaActual).push(d);
 }
 
 function borrarDocumento(id){
   if(!confirm('¿Borrar documento?')) return;
-  db.ref('documentos/'+categoriaActual+'/'+id).remove();
+  dbRef('documentos/'+categoriaActual+'/'+id).remove();
 }
 
 function entrenamientosHTML(entrenamientos){
@@ -2050,12 +2119,12 @@ function agregarEntrenamiento(){
   };
   if(!e.fecha) return;
   const cats = [categoriaActual, ...[...document.querySelectorAll('.chkEntCat:checked')].map(x=>x.value)];
-  cats.forEach(c=> db.ref('entrenamientos/'+c).push(e));
+  cats.forEach(c=> dbRef('entrenamientos/'+c).push(e));
 }
 
 function borrarEntrenamiento(id){
   if(!confirm('¿Borrar entrenamiento?')) return;
-  db.ref('entrenamientos/'+categoriaActual+'/'+id).remove();
+  dbRef('entrenamientos/'+categoriaActual+'/'+id).remove();
 }
 
 // ---------- Arranque ----------
@@ -2068,6 +2137,7 @@ function borrarEntrenamiento(id){
   }
 
   if(window.FIREBASE_CONFIG_FALTA || !window.FIREBASE_CONFIG){
+    await cargarTemporadas();
     document.getElementById('avisoConfig').textContent =
       'Falta config/firebase.js con las credenciales reales del club (ver config/README.md). Mostrando solo la config de ejemplo.';
     document.getElementById('avisoConfig').classList.remove('oculto');
@@ -2079,6 +2149,7 @@ function borrarEntrenamiento(id){
   firebase.initializeApp(window.FIREBASE_CONFIG);
   db = firebase.database();
   auth = firebase.auth();
+  await cargarTemporadas();
   auth.onAuthStateChanged(onAuthCambio);
   renderVistaActual();
 })();

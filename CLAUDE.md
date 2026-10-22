@@ -28,6 +28,34 @@ aparte, sin tocarse) para poder ofrecérsela a otro club en 2027.
 
 # Estado del proyecto
 
+**2026-10-22 — Datos por temporada (como futdetail).** Decisión de Javi:
+guardar por año. Partidos, convocatorias, tabla manual, recordatorios
+omitidos, entrenamientos y documentos van bajo `temporadas/<año>/<nodo>/...`
+(`NODOS_DE_TEMPORADA`; todo acceso pasa por `dbRef()`, que agrega el prefijo
+según `temporadaActual`). Plantel, datos médicos, contratos, préstamos,
+multimedia e informes NO dependen del año (son del club / del jugador).
+- Selector de Temporada arriba (oculto en Plantel y Reportes, que no
+  dependen del año); aviso cuando se mira una que no es la activa. La
+  activa y la lista viven en `temporadasInfo` (`activa`, `lista/<año>`);
+  `club.json -> temporada.anio` es solo el valor inicial.
+- Admin: "Iniciar temporada nueva" en Inicio. No mueve ni borra nada: la
+  anterior queda tal cual y se consulta desde el selector. Los ascensos se
+  hacen con "Pasar de categoría".
+- Distinto de Tigre a propósito: Tigre archiva la temporada en
+  `temporadas_cerradas` y deja todo en cero (lo viejo solo se ve desde la
+  consola); acá las temporadas viejas se ven en la app.
+- Ficha: el historial recorre todas las temporadas. Tabla automática y
+  Confiabilidad solo aplican a la temporada activa (los datos de la liga
+  son los de hoy).
+- Reglas: salen los 6 nodos sueltos, entran `temporadas` y `temporadasInfo`.
+- Proyecto de prueba migrado: los datos que estaban en la raíz pasaron a
+  `temporadas/2026` (verificado idéntico) con reglas de transición en el
+  medio. Probado: arrancar 2027, cargar un partido y convocatoria en 2027,
+  volver a 2026 (todo intacto, con aviso), entrenamientos separados por año,
+  historial de un jugador con 2026 en Cuarta y 2027 en Quinta, pase de
+  categoría ida y vuelta, y la ruta vieja `partidos` ya rechazada por las
+  reglas. Después se borró el 2027 de prueba y quedó 2026 como activa.
+
 **2026-10-22 — Segunda pasada por futdetail: todo lo que faltaba.** Se
 recorrió lo que no se había visto (Inicio, Estadísticas por división,
 Fixture juvenil/reserva, Jugadores Propios, reportes de contratos y
@@ -352,10 +380,6 @@ con `csv_generico` apuntando a su export.
 - Fase 4 (resto) — video sync queda afuera hasta saber cómo filma el club
   real; si en algún momento se suma, no reusar el de Tigre tal cual (está
   atado a YouTube + Catapult con su calibración específica).
-- **Temporadas**: los datos no están separados por año (futdetail filtra
-  todo por temporada 2024/2025/2026). Hoy una instancia sirve para una
-  temporada; para la segunda hay que decidir si se prefijan las rutas con el
-  año o se archiva un backup y se arranca limpio. Decisión pendiente.
 - Sin probar NADA de esto (desde Fase 1) contra un club real todavía —
   todo lo automático (Catapult, adaptadores de liga) está verificado con
   datos de prueba armados a mano, no con cuentas/sitios reales.
