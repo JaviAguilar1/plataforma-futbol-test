@@ -26,6 +26,9 @@ POR_CATEGORIA = {"$cat": {".read": permiso("ve"), ".write": permiso("edita")}}
 NODOS_CLUB = ["plantel", "lesiones", "contratos", "prestamos", "multimedia", "informes"]
 
 reglas = {
+    # El admin y la cuenta de backup (scripts/backup_firebase.py) leen la base
+    # entera de una vez; "backup" no tiene ninguna regla de escritura.
+    ".read": f"auth != null && ({ROL} === 'admin' || {ROL} === 'backup')",
     "users": {
         ".read": ES_ADMIN,
         "$uid": {

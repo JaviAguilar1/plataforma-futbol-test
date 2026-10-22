@@ -6,3 +6,5 @@ config/club.json
 config/firebase.js
 
 data/tablas.json
+
+backups/

@@ -45,6 +45,12 @@ Copiá `club.example.json` a `club.json` y completá:
   salió de relevar un sistema real de gestión de clubes (futdetail), es un
   catálogo estándar de fútbol — no hace falta tocarlo salvo que el club use
   otra nomenclatura.
+- **disciplina**: reglas de amarillas acumuladas de la liga del club.
+  `amarillasAlerta` (desde cuántas avisa), `amarillasSuspension` (con cuántas
+  cumple una fecha; el conteo vuelve a cero ahí o con una expulsión) y
+  `competenciasQueNoCuentan` (nombres de competencia, tal cual se cargan en
+  el partido, cuyas tarjetas no suman — ej. amistosos). Se ve en Inicio y
+  como aviso al lado de cada jugador en la Convocatoria. Si falta, usa 4 y 5.
 - **linksPartido**: qué tipos de link se pueden cargar por partido (video,
   resumen, análisis, informe, etc.). Sacá o agregá según lo que el club
   realmente use — si agregás una clave nueva, sumale también su etiqueta en
@@ -201,3 +207,32 @@ rol a sí mismo (solo el admin escribe `role`). **Cada vez que se actualiza
 volver a publicar las reglas: sin la regla, Firebase rechaza la lectura y la
 escritura de ese nodo (la app lo avisa con un cartel rojo abajo, y acciones
 que leen varios nodos — como "Pasar de categoría" — no se completan).
+
+# Backup diario (en la compu del club)
+
+`scripts/backup_firebase.py` baja la base entera a un JSON por día, en una
+carpeta **fuera del repo** (tiene datos personales y médicos: el script se
+niega a guardar adentro del repo). Por defecto en
+`Documentos\backups-<projectId>`, conserva los últimos 60.
+
+1. Crear una cuenta para el backup desde la app ("Crear cuenta", con un mail
+   del club) y, en la consola de Firebase → Realtime Database, ponerle
+   `users/<uid>/role` = `"backup"`. Ese rol puede leer toda la base pero no
+   escribir nada.
+2. En la compu del club (una sola vez, en una terminal):
+   ```
+   setx BACKUP_EMAIL "backup@tuclub.com"
+   setx BACKUP_PASSWORD "la-contraseña-de-esa-cuenta"
+   schtasks /Create /SC DAILY /ST 03:00 /TN "Backup club" /TR "python C:\ruta\al\repo\scripts\backup_firebase.py"
+   ```
+   Opcionales: `BACKUP_DIR` (otra carpeta, ej. una sincronizada con Drive) y
+   `BACKUP_CONSERVAR` (cuántos días guardar).
+3. Probarlo: `schtasks /Run /TN "Backup club"` y fijarse que aparezca el
+   archivo del día.
+
+**Restaurar:** consola de Firebase → Realtime Database → menú ⋮ → "Importar
+JSON" con el archivo del día elegido. **Reemplaza la base entera**: bajar
+antes un backup del estado actual por las dudas.
+
+Si el club pasa al plan pago de Firebase (Blaze), también puede activar los
+backups automáticos de la propia consola.
