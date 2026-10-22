@@ -260,3 +260,19 @@ antes un backup del estado actual por las dudas.
 
 Si el club pasa al plan pago de Firebase (Blaze), también puede activar los
 backups automáticos de la propia consola.
+
+# App instalable y uso sin señal
+
+- **Instalar en el celular:** abrir el sitio en Chrome (Android) → menú →
+  "Instalar app" / en iPhone, Safari → Compartir → "Agregar a inicio". Queda
+  con ícono propio y pantalla completa. Para que muestre el nombre y el
+  escudo del club, editar `manifest.json` (`name`, `short_name`) y
+  reemplazar `icons/icon-192.png` / `icons/icon-512.png` (cuadrados, con el
+  dibujo dentro del 60% central).
+- **Sin señal:** cada pantalla que se abre queda guardada en el dispositivo
+  (por usuario). Si después no hay conexión, la app abre igual y muestra lo
+  último guardado con un aviso abajo. Lo que se cargue sin señal se guarda
+  cuando vuelve la conexión **si no se cierra la app** en el medio. Al tocar
+  "Salir" se borra la copia del dispositivo (incluye datos médicos).
+- Si se cambia `sw.js`, subir el número de `CACHE` para que los celulares
+  tomen la versión nueva.

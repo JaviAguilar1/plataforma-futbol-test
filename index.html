@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#121826">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <title id="pageTitle">Seguimiento de Club</title>
 <style>
   :root{
@@ -85,6 +88,7 @@
   .estado{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.76rem;background:var(--borde);}
   .estado-titular{background:var(--verde);color:#111;} .estado-entro{background:var(--primario);color:#111;} .estado-no-citado{background:#5a2326;}
   td.mejor{color:var(--primario);font-weight:700;}
+  #avisoSinConexion{position:fixed;left:0;right:0;bottom:0;z-index:9;background:#7a5a08;color:#fff;text-align:center;padding:7px 12px;font-size:.85rem;}
   #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--rojo);color:#fff;padding:10px 16px;border-radius:6px;z-index:10;max-width:90vw;font-size:.9rem;}
   @media (max-width:600px){ main{padding:12px;} header{padding:10px 12px;} nav{padding:8px 12px;} }
 </style>
@@ -142,6 +146,7 @@
 </main>
 
 <div id="toast" class="oculto"></div>
+<div id="avisoSinConexion" class="oculto">Sin conexión: se muestra lo último guardado en este dispositivo. Lo que cargues se guarda cuando vuelva la señal (sin cerrar la app).</div>
 <footer>Plantilla genérica de seguimiento de club — instancia propia, sin datos compartidos con otros clubes.</footer>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -263,7 +268,7 @@ function rutaReal(ruta){
 function dbRef(ruta){ return db.ref(rutaReal(ruta)); }
 
 async function cargarTemporadas(){
-  const info = db ? ((await db.ref('temporadasInfo').once('value')).val() || {}) : {};
+  const info = db ? ((await leerUnaVez('temporadasInfo')) || {}) : {};
   temporadaActiva = String(info.activa || CLUB.temporada.anio || new Date().getFullYear());
   temporadasLista = [...new Set([temporadaActiva, ...Object.keys(info.lista || {})])].sort().reverse();
   temporadaActual = temporadaActiva;
@@ -297,15 +302,55 @@ function temporadaAdminHTML(){
   </div>`;
 }
 
+// ---------- Copia local (para abrir la app sin señal) ----------
+// Cada dato que la app escucha se guarda en el dispositivo (IndexedDB) y se
+// muestra al instante la próxima vez, hasta que llega lo de Firebase. Va por
+// usuario y se borra al cerrar sesión: incluye datos médicos.
+let conectado = false;
+let _idb = null;
+function abrirCache(){
+  return _idb || (_idb = new Promise((res, rej)=>{
+    const r = indexedDB.open('plataforma-cache', 1);
+    r.onupgradeneeded = ()=> r.result.createObjectStore('kv');
+    r.onsuccess = ()=> res(r.result);
+    r.onerror = ()=> rej(r.error);
+  }));
+}
+const claveCache = ruta => (usuario?.uid || '-') + ':' + ruta;
+async function cacheGuardar(ruta, v){
+  try{ (await abrirCache()).transaction('kv', 'readwrite').objectStore('kv').put({v, ts: Date.now()}, claveCache(ruta)); }catch(e){}
+}
+async function cacheLeer(ruta){
+  try{
+    const d = await abrirCache();
+    return await new Promise(res=>{ const r = d.transaction('kv').objectStore('kv').get(claveCache(ruta)); r.onsuccess = ()=> res(r.result || null); r.onerror = ()=> res(null); });
+  }catch(e){ return null; }
+}
+async function cacheBorrarTodo(){
+  try{ (await abrirCache()).transaction('kv', 'readwrite').objectStore('kv').clear(); }catch(e){}
+}
+// Lectura de una sola vez que no se cuelga sin señal: usa la copia local si
+// Firebase no contesta.
+function leerUnaVez(ruta){
+  return new Promise(res=>{
+    let listo = false;
+    db.ref(ruta).once('value').then(x=>{ if(listo) return; listo = true; cacheGuardar(ruta, x.val()); res(x.val()); }, ()=>{});
+    cacheLeer(ruta).then(c=> setTimeout(()=>{ if(!listo){ listo = true; res(c ? c.v : null); } }, conectado ? 5000 : 1500));
+  });
+}
+
 function suscribirRefs(listaRefs, pares){
   _listasRefs.add(listaRefs);
   listaRefs.forEach(r=>r.ref.off('value', r.cb));
   listaRefs.length = 0;
   pares.forEach(([ruta, onDato])=>{
-    const ref = dbRef(ruta);
-    const cb = snap => onDato(snap.val() || {});
+    const real = rutaReal(ruta);
+    const ref = db.ref(real);
+    let llego = false;
+    const cb = snap => { llego = true; const v = snap.val() || {}; cacheGuardar(real, v); onDato(v); };
     ref.on('value', cb);
     listaRefs.push({ref, cb});
+    cacheLeer(real).then(c=>{ if(c && !llego) onDato(c.v || {}); });
   });
 }
 
@@ -505,8 +550,9 @@ function recuperarPassword(){
     .catch(err=> mensajeMuro(textoErrorAuth(err)));
 }
 
-function hacerLogout(){
+async function hacerLogout(){
   apagarSuscripciones();
+  await cacheBorrarTodo();
   auth.signOut();
 }
 
@@ -520,23 +566,30 @@ function onAuthCambio(user){
   // Escucha la propia cuenta: cuando el admin la aprueba (o le cambia/quita el
   // rol) la pantalla se actualiza sola, sin tener que volver a entrar.
   _refUsuario = db.ref('users/'+user.uid);
-  _refUsuario.on('value', async snap=>{
-    const u = snap.val() || {};
-    const rol = u.role || null;
-    if(!rol){
-      rolActual = null;
-      mostrarMuro(u.rolSolicitado ? 'pendiente' : 'pedirAcceso');
-      return;
-    }
-    if(rol === rolActual) return;
-    rolActual = rol;
-    if(esAdmin()){
-      await sincronizarRolesConfig();
-      escucharPendientes();
-    }
-    await cargarTemporadas();
-    mostrarApp();
+  let llegoUsuario = false;
+  cacheLeer('users/'+user.uid).then(c=>{ if(c && !llegoUsuario) aplicarCuenta(c.v || {}); });
+  _refUsuario.on('value', snap=>{
+    llegoUsuario = true;
+    cacheGuardar('users/'+user.uid, snap.val());
+    aplicarCuenta(snap.val() || {});
   });
+}
+
+async function aplicarCuenta(u){
+  const rol = u.role || null;
+  if(!rol){
+    rolActual = null;
+    mostrarMuro(u.rolSolicitado ? 'pendiente' : 'pedirAcceso');
+    return;
+  }
+  if(rol === rolActual) return;
+  rolActual = rol;
+  if(esAdmin()){
+    sincronizarRolesConfig();
+    escucharPendientes();
+  }
+  await cargarTemporadas();
+  mostrarApp();
 }
 
 function escucharPendientes(){
@@ -737,7 +790,7 @@ const badge = x => x ? `<span class="res res-${x}">${x}</span>` : '';
 // ---------- Buscador de jugadores (todas las categorías visibles) ----------
 let _indiceJugadores = null;
 async function cargarIndiceJugadores(){
-  const pares = await Promise.all(categoriasVisibles().map(c=> dbRef('plantel/'+c.id).once('value').then(x=>[c.id, x.val() || {}])));
+  const pares = await Promise.all(categoriasVisibles().map(c=> leerUnaVez('plantel/'+c.id).then(v=>[c.id, v || {}])));
   _indiceJugadores = pares.flatMap(([cat, pl])=> Object.entries(pl).map(([id, j])=>({id, cat, j})));
   buscarJugador(document.getElementById('buscadorJugador').value);
 }
@@ -1288,7 +1341,7 @@ async function guardarImportGps(){
 
 // ---- Ficha: GPS del jugador en todas las temporadas y categorías visibles
 function cargarGpsJugador(id){
-  const leer = (ruta) => db.ref(ruta).once('value').then(x=> x.val() || {});
+  const leer = (ruta) => leerUnaVez(ruta).then(v=> v || {});
   const cats = categoriasVisibles();
   Promise.all([
     Promise.all(cats.map(c=> Promise.all([leer('plantel/'+c.id), leer('gpsAlias/'+c.id)]))),
@@ -1681,7 +1734,7 @@ function fichaExtraHTML(id, j){
 // categoría conserva su historial completo (el id no cambia con el pase).
 function cargarHistorialJugador(id){
   const leer = (t, nodo) => Promise.all(categoriasVisibles().map(c=>
-    db.ref(`temporadas/${t}/${nodo}/${c.id}`).once('value').then(s=>[c.id, s.val()||{}]))).then(Object.fromEntries);
+    leerUnaVez(`temporadas/${t}/${nodo}/${c.id}`).then(v=>[c.id, v||{}]))).then(Object.fromEntries);
   Promise.all(temporadasLista.map(t=> Promise.all([leer(t, 'convocatorias'), leer(t, 'partidos')]))).then(porTemporada=>{
     const el = document.getElementById('historial_'+id);
     if(el) el.innerHTML = historialJugadorHTML(id, temporadasLista.map((t,i)=>({t, convs: porTemporada[i][0], partidos: porTemporada[i][1]})));
@@ -2885,8 +2938,16 @@ function borrarEntrenamiento(id){
   firebase.initializeApp(window.FIREBASE_CONFIG);
   db = firebase.database();
   auth = firebase.auth();
+  db.ref('.info/connected').on('value', x=>{ conectado = x.val() === true; actualizarAvisoConexion(); });
+  setTimeout(()=>{ _graciaConexion = false; actualizarAvisoConexion(); }, 4000);
   auth.onAuthStateChanged(onAuthCambio);
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 })();
+
+let _graciaConexion = true; // no avisar "sin conexión" en los primeros segundos (todavía está conectando)
+function actualizarAvisoConexion(){
+  document.getElementById('avisoSinConexion').classList.toggle('oculto', conectado || _graciaConexion);
+}
 </script>
 </body>
 </html>

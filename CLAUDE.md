@@ -28,6 +28,22 @@ aparte, sin tocarse) para poder ofrecérsela a otro club en 2027.
 
 # Estado del proyecto
 
+**2026-10-22 — App instalable y uso sin señal (de Tigre, generalizado).**
+`manifest.json` + `sw.js` + íconos genéricos (`icons/`, sin marcas de
+club). El service worker sirve la app desde la red y, sin señal, desde su
+copia; los datos de Firebase nunca pasan por él. **Copia local de datos**
+en IndexedDB: `suscribirRefs` guarda cada valor y muestra la copia al
+instante hasta que llega Firebase; `leerUnaVez` (temporadas, historial,
+GPS de la ficha, buscador) no se cuelga sin señal. La cuenta propia
+también se lee de la copia, así la app abre offline. Copia por usuario,
+borrada al "Salir". Aviso "Sin conexión" abajo (con 4 s de gracia al
+abrir). `sincronizarRolesConfig` ya no se espera (sin señal colgaba la
+entrada del admin). Probado: SW y manifest registrados, copia llena al
+navegar, Firebase desconectado (`goOffline`) → aviso + GPS, historial y
+GPS de la ficha desde la copia; reconectar saca el aviso; "Salir" borra la
+copia (36 → 0) y se puede volver a entrar. Sin probar: el cartel de
+instalación en un celular real.
+
 **2026-10-22 — Ficha completa y GPS en pantalla.**
 - **Ficha**: estado del jugador en cada partido de su categoría (Titular /
   Entró / No ingresó / No citado / Sin convocatoria / Por jugar / No
