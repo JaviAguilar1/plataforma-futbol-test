@@ -33,7 +33,7 @@
         "$nodo": {
           "$cat": {
             ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('ve').val() === 'todas' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('ve').child($cat).val() === true)",
-            ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('edita').val() === 'todas' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('edita').child($cat).val() === true)"
+            ".write": "(auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('edita').val() === 'todas' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('edita').child($cat).val() === true)) || (auth != null && $nodo === 'gps' && root.child('users').child(auth.uid).child('role').val() === 'importador')"
           }
         }
       }
@@ -69,6 +69,12 @@
       }
     },
     "informes": {
+      "$cat": {
+        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('ve').val() === 'todas' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('ve').child($cat).val() === true)",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('edita').val() === 'todas' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('edita').child($cat).val() === true)"
+      }
+    },
+    "gpsAlias": {
       "$cat": {
         ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('ve').val() === 'todas' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('ve').child($cat).val() === true)",
         ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('edita').val() === 'todas' || root.child('rolesConfig').child(root.child('users').child(auth.uid).child('role').val()).child('edita').child($cat).val() === true)"

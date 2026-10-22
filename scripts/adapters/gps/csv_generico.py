@@ -37,8 +37,9 @@ from .base import RegistroSesion
 
 CAMPOS_NUMERICOS = {
     "minutos", "distanciaTotalM", "distanciaPorMinM", "metros1821",
-    "metros2125", "metros25Mas", "sprints", "velMaxKmh", "aceleraciones",
-    "desaceleraciones", "playerLoad",
+    "metros2125", "metros25Mas", "distanciaAltaVelocidadPorMin", "sprints",
+    "velMaxKmh", "aceleraciones", "aceleracionesBanda2", "desaceleraciones",
+    "aceleracionMaximaIndividual", "desaceleracionMaximaIndividual", "playerLoad",
 }
 
 

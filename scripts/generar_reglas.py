@@ -21,9 +21,15 @@ def permiso(tipo):
 
 
 POR_CATEGORIA = {"$cat": {".read": permiso("ve"), ".write": permiso("edita")}}
+# El importador automático de GPS (scripts/scrape_main.py) usa una cuenta de
+# rol "importador": solo puede escribir sesiones de GPS, nada más.
+POR_CATEGORIA_TEMPORADA = {"$cat": {
+    ".read": permiso("ve"),
+    ".write": f"({permiso('edita')}) || (auth != null && $nodo === 'gps' && {ROL} === 'importador')",
+}}
 
 # Del club / del jugador (no dependen de la temporada).
-NODOS_CLUB = ["plantel", "lesiones", "contratos", "prestamos", "multimedia", "informes"]
+NODOS_CLUB = ["plantel", "lesiones", "contratos", "prestamos", "multimedia", "informes", "gpsAlias"]
 
 reglas = {
     # El admin y la cuenta de backup (scripts/backup_firebase.py) leen la base
@@ -42,7 +48,7 @@ reglas = {
     },
     "rolesConfig": {".read": ES_ADMIN, ".write": ES_ADMIN},
     "temporadasInfo": {".read": TIENE_ROL, ".write": ES_ADMIN},
-    "temporadas": {"$t": {"$nodo": POR_CATEGORIA}},
+    "temporadas": {"$t": {"$nodo": POR_CATEGORIA_TEMPORADA}},
 }
 for nodo in NODOS_CLUB:
     reglas[nodo] = POR_CATEGORIA
