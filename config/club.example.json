@@ -50,6 +50,11 @@
     { "codigo": "DEL-SD", "nombre": "Segundo delantero" },
     { "codigo": "DEL-CD", "nombre": "Centro delantero" }
   ],
+  "disciplina": {
+    "amarillasAlerta": 4,
+    "amarillasSuspension": 5,
+    "competenciasQueNoCuentan": ["Amistosos"]
+  },
   "linksPartido": [
     "partido",
     "resumen",

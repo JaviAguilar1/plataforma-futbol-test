@@ -28,6 +28,27 @@ aparte, sin tocarse) para poder ofrecérsela a otro club en 2027.
 
 # Estado del proyecto
 
+**2026-10-22 — Amarillas acumuladas y backup privado (de Tigre).**
+- **Amarillas por ciclo** (`situacionTarjetas`, mismo criterio que Tigre):
+  se cuentan en orden de fecha, el ciclo vuelve a cero al llegar a la
+  suspensión o con una roja. Umbrales en `club.json -> disciplina`
+  (`amarillasAlerta`, `amarillasSuspension`, `competenciasQueNoCuentan`,
+  default 4/5). Inicio muestra quién está en riesgo o suspendido; en la
+  Convocatoria de una fecha aparece el aviso al lado de cada jugador
+  contando solo las fechas anteriores. Probado con casos armados (alerta,
+  5ta en la última fecha, roja que reinicia, amistosos excluidos, fecha
+  intermedia) y en pantalla con los datos de prueba.
+- **Backup** (`scripts/backup_firebase.py`): corre en la compu del club con
+  una cuenta de rol `backup` (lee toda la base, no escribe nada — regla
+  `.read` en la raíz solo para `admin` y `backup`), guarda un JSON por día
+  FUERA del repo (se niega si la carpeta está adentro) y conserva 60.
+  Distinto de Tigre, que guarda los backups en su repo público. Probado con
+  una cuenta temporal: backup completo (todos los nodos), la cuenta no
+  puede escribir plantel, su rol ni la temporada (401), y los errores (sin
+  credenciales, contraseña mal, carpeta en el repo) salen claros. Cuenta y
+  archivo de prueba borrados. Instrucciones de tarea programada y
+  restauración en `config/README.md`.
+
 **2026-10-22 — Privacidad y cuentas (traído de Tigre, generalizado).**
 - **Muro de ingreso**: sin cuenta aprobada no se ve nada (antes la lectura
   era pública: DNI, contactos de padres y datos médicos de menores a la

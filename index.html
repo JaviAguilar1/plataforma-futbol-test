@@ -568,7 +568,8 @@ function usuariosHTML(users){
     .map(([uid,u])=>{
       const yo = uid === usuario.uid;
       const sel = u.role || u.rolSolicitado || '';
-      const select = `<select id="rolUsuario_${uid}" ${yo?'disabled':''}>${roles.map(r=>`<option value="${esc(r.id)}" ${r.id===sel?'selected':''}>${esc(r.nombre)}</option>`).join('')}</select>`;
+      const opciones = u.role && !roles.some(r=>r.id===u.role) ? [...roles, {id: u.role, nombre: u.role}] : roles;
+      const select = `<select id="rolUsuario_${uid}" ${yo?'disabled':''}>${opciones.map(r=>`<option value="${esc(r.id)}" ${r.id===sel?'selected':''}>${esc(r.nombre)}</option>`).join('')}</select>`;
       const txtEstado = u.role ? 'Activo' : (u.rolSolicitado ? `<b style="color:var(--primario);">Pendiente</b>` : 'Sin acceso');
       const acciones = yo ? '<span class="nota">(sos vos)</span>'
         : u.role ? `<button class="secundario" onclick="asignarRol('${uid}')">Guardar rol</button> <button class="peligro" onclick="quitarAcceso('${uid}')">Quitar acceso</button>`
@@ -678,6 +679,42 @@ function statsJugadores(convocatorias, partidos, competencia){
 function competenciasDe(partidos){
   return [...new Set(Object.values(partidos||{}).map(p=>p.competencia).filter(Boolean))].sort();
 }
+// Amarillas por ciclo (mismo criterio que Tigre): se cuentan en orden de
+// fecha y el ciclo vuelve a cero al llegar a la suspensión o con una
+// expulsión (en los dos casos el jugador ya cumple fecha). Solo cuenta lo
+// anterior a `antesDeFecha` si se pasa (para armar la convocatoria de esa
+// fecha); "suspendido" = lo que pasó en la última fecha contada.
+function situacionTarjetas(convocatorias, partidos, antesDeFecha){
+  const d = CLUB.disciplina || {};
+  const alerta = d.amarillasAlerta ?? 4, suspension = d.amarillasSuspension ?? 5;
+  const noCuentan = (d.competenciasQueNoCuentan || []).map(sinAcentos);
+  const fechas = Object.keys(convocatorias || {})
+    .filter(f=> antesDeFecha == null || Number(f) < Number(antesDeFecha))
+    .filter(f=> !noCuentan.includes(sinAcentos(partidos?.[f]?.competencia || '')))
+    .sort((a,b)=> a-b);
+  const ultima = fechas[fechas.length-1];
+  const ciclo = {}, nombre = {}, suspendido = {};
+  fechas.forEach(f=> Object.entries(convocatorias[f] || {}).forEach(([jid, c])=>{
+    if(c.jugador) nombre[jid] = c.jugador;
+    if(c.roja){
+      ciclo[jid] = 0;
+      if(f === ultima) suspendido[jid] = `Expulsado en la fecha ${f} (ver sanción)`;
+      return;
+    }
+    if(!c.amarilla) return;
+    ciclo[jid] = (ciclo[jid] || 0) + 1;
+    if(ciclo[jid] >= suspension){
+      ciclo[jid] = 0;
+      if(f === ultima) suspendido[jid] = `Llegó a ${suspension} amarillas en la fecha ${f}: cumple la próxima`;
+    }
+  }));
+  const ids = [...new Set([...Object.keys(ciclo), ...Object.keys(suspendido)])];
+  return {
+    alerta, suspension, ciclo, suspendido, nombre,
+    enRiesgo: ids.filter(id=> suspendido[id] || (ciclo[id] || 0) >= alerta),
+  };
+}
+
 const badge = x => x ? `<span class="res res-${x}">${x}</span>` : '';
 
 // ---------- Inicio ----------
@@ -719,6 +756,7 @@ function inicioHTML(d){
   const r = resumenEquipo(Object.values(partidosCat));
   const ultimos = Object.entries(partidosCat).filter(([,p])=>desenlace(p)).sort((a,b)=>(+b[0])-(+a[0])).slice(0,5);
   const st = Object.entries(statsJugadores(d.convocatorias[cat], partidosCat));
+  const tarjetas = situacionTarjetas(d.convocatorias[cat], partidosCat);
   const top = campo => st.filter(([,x])=>x[campo]>0).sort((a,b)=>b[1][campo]-a[1][campo]).slice(0,5);
   const listaTop = (campo, vacio) => {
     const t = top(campo);
@@ -739,6 +777,17 @@ function inicioHTML(d){
   <div class="grid2">
     <div class="card"><h2>Goleadores</h2>${listaTop('goles', 'Sin goles cargados en las convocatorias.')}</div>
     <div class="card"><h2>Asistencias</h2>${listaTop('asist', 'Sin asistencias cargadas en las convocatorias.')}</div>
+  </div>
+  <div class="card">
+    <h2>Suspensiones y amarillas</h2>
+    ${tarjetas.enRiesgo.length ? `<table><tbody>${tarjetas.enRiesgo.map(id=>{
+      const susp = tarjetas.suspendido[id];
+      const n = tarjetas.ciclo[id] || 0;
+      return `<tr><td>${esc(nombreEn(cat, id, tarjetas.nombre[id]))}</td>
+        <td>${susp ? `<b style="color:var(--rojo);">${esc(susp)}</b>`
+          : `<b style="color:var(--primario);">${n} amarillas</b> (a ${tarjetas.suspension - n} de la suspensión)`}</td></tr>`;
+    }).join('')}</tbody></table>`
+    : `<p class="nota">Nadie suspendido ni en riesgo (alerta desde ${tarjetas.alerta} amarillas, suspensión a las ${tarjetas.suspension}).</p>`}
   </div>
   <div class="grid2">
     <div class="card">
@@ -1672,18 +1721,18 @@ function renderPartidos(){
   if(!categoriaActual){ sec.innerHTML = '<p>No hay categorías configuradas.</p>'; return; }
   if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver y cargar datos.</p>'; return; }
   const cat = categoriaActual;
-  let partidosDatos = {}, plantelDatos = {}, convocatoriaDatos = {};
-  const rerender = ()=>{ sec.innerHTML = partidosHTML(cat, partidosDatos, plantelDatos, convocatoriaDatos); };
+  let partidosDatos = {}, plantelDatos = {}, convocatoriasDatos = {};
+  const rerender = ()=>{ sec.innerHTML = partidosHTML(cat, partidosDatos, plantelDatos, convocatoriasDatos); };
   const pares = [
     ['partidos/'+cat, v=>{ partidosDatos=v; rerender(); }],
     ['plantel/'+cat, v=>{ plantelDatos=v; rerender(); }],
   ];
   const fechaConv = convocatoriaAbiertaFecha[cat];
-  if(fechaConv) pares.push(['convocatorias/'+cat+'/'+fechaConv, v=>{ convocatoriaDatos=v; rerender(); }]);
+  if(fechaConv) pares.push(['convocatorias/'+cat, v=>{ convocatoriasDatos=v; rerender(); }]);
   suscribirRefs(_refsPartidos, pares);
 }
 
-function partidosHTML(cat, datos, plantel, convocatoria){
+function partidosHTML(cat, datos, plantel, convocatorias){
   const filas = Object.entries(datos)
     .sort((a,b)=> (+a[0]) - (+b[0]))
     .map(([fecha,p])=>{
@@ -1691,7 +1740,7 @@ function partidosHTML(cat, datos, plantel, convocatoria){
       const convocatoriaAbierta = convocatoriaAbiertaFecha[cat] === fecha;
       let extra = '';
       if(detalleAbierta) extra += `<tr><td colspan="8">${partidoDetalleHTML(fecha,p)}</td></tr>`;
-      if(convocatoriaAbierta) extra += `<tr><td colspan="8">${convocatoriaHTML(cat, fecha, plantel, convocatoria)}</td></tr>`;
+      if(convocatoriaAbierta) extra += `<tr><td colspan="8">${convocatoriaHTML(cat, fecha, plantel, convocatorias[fecha] || {}, situacionTarjetas(convocatorias, datos, fecha))}</td></tr>`;
       return `
       <tr>
         <td>${fecha}</td>
@@ -1830,7 +1879,7 @@ function guardarDetallePartido(fecha){
 // Filas = jugadores activos del plantel + cualquiera que ya figure en esta
 // convocatoria aunque después se haya archivado o pasado de categoría (si no,
 // al re-guardar se borraría su línea de un partido que sí jugó).
-function convocatoriaHTML(cat, fecha, plantel, convocatoria){
+function convocatoriaHTML(cat, fecha, plantel, convocatoria, tarjetas){
   const ids = [...new Set([...idsJugadoresActivos(plantel), ...Object.keys(convocatoria)])];
   if(ids.length === 0){
     return `<div class="panel-anidado"><p>Cargá el plantel de esta categoría antes de armar la convocatoria.</p></div>`;
@@ -1845,7 +1894,7 @@ function convocatoriaHTML(cat, fecha, plantel, convocatoria){
       const c = convocatoria[id] || {};
       return `
       <tr>
-        <td>${esc(nombre(id))}${plantel[id] ? '' : ' <span class="tag-rol" style="background:var(--borde);">fuera del plantel</span>'}</td>
+        <td>${esc(nombre(id))}${plantel[id] ? '' : ' <span class="tag-rol" style="background:var(--borde);">fuera del plantel</span>'}${avisoTarjetas(tarjetas, id)}</td>
         <td><input type="checkbox" id="cv_convocado_${id}" data-nombre="${esc(nombre(id))}" ${convocatoria[id]?'checked':''} ${dis}></td>
         <td><input type="checkbox" id="cv_titular_${id}" ${c.titular?'checked':''} onchange="if(this.checked) document.getElementById('cv_convocado_${id}').checked=true" ${dis}></td>
         <td><input type="number" id="cv_dorsal_${id}" value="${c.dorsal ?? ''}" style="width:60px;" ${dis}></td>
@@ -1880,6 +1929,12 @@ function convocatoriaHTML(cat, fecha, plantel, convocatoria){
     ${puedeEditar()?`<button class="accion" onclick="guardarConvocatoria('${cat}','${fecha}')" style="margin-top:10px;">Guardar convocatoria</button>`:''}
     <button class="secundario" onclick="exportarCitacionPDF('${cat}','${fecha}')" style="margin-top:10px;">Exportar citación (PDF)</button>
   </div>`;
+}
+
+function avisoTarjetas(tarjetas, id){
+  if(tarjetas.suspendido[id]) return ` <span class="tag-rol" style="background:var(--rojo);color:#fff;" title="${esc(tarjetas.suspendido[id])}">suspendido</span>`;
+  const n = tarjetas.ciclo[id] || 0;
+  return n >= tarjetas.alerta ? ` <span class="tag-rol" title="A ${tarjetas.suspension - n} de la suspensión">${n} TA</span>` : '';
 }
 
 // ---------- Export a PDF ----------
