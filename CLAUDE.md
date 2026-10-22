@@ -28,6 +28,94 @@ aparte, sin tocarse) para poder ofrecérsela a otro club en 2027.
 
 # Estado del proyecto
 
+**2026-10-22 — Segunda pasada por futdetail: todo lo que faltaba.** Se
+recorrió lo que no se había visto (Inicio, Estadísticas por división,
+Fixture juvenil/reserva, Jugadores Propios, reportes de contratos y
+liberados, y las 9 pestañas de la ficha del jugador). Sumado a `index.html`:
+- **Inicio** (vista por defecto): resumen de la categoría elegida (PJ/G/E/P/
+  GF/GC/% de puntos, últimos 5 partidos, goleadores y asistencias), y de
+  todo el club: lesionados actuales, contratos que vencen en 6 meses y
+  cumpleaños del mes/de hoy.
+- **Estadísticas** por categoría, filtrables por competencia: totales,
+  Local/Visitante, sistemas tácticos usados, y por jugador (convocatorias,
+  titular, minutos, goles, asistencias, TA, TR, destacado) sumando las
+  convocatorias. Resuelve el pendiente de "estadísticas de temporada".
+- **Fixture general** (todo el club, juveniles o reserva según `esReserva`):
+  una fila por fecha con el resultado de cada categoría y la "Jornada"
+  (puntos del club vs. del rival sumando todas las categorías), igual al
+  reporte de futdetail.
+- **Reportes** (todo el club): liberados/archivados (filtro por fecha y
+  posición), jugadores con contrato (filtro por fin de contrato) y
+  préstamos/convocatorias vigentes.
+- **Plantel**: filtros por nombre (sin importar tildes), posición, edad
+  máxima y valoración; columna Edad; orden por posición; y **"Pasar de
+  categoría"** a varios jugadores marcados (cambio de temporada) — mueve el
+  jugador con el mismo id y sus registros (médicos, contratos, préstamos,
+  multimedia, informes) en una sola escritura multi-ruta. Las convocatorias
+  quedan en la categoría donde se jugó, con el nombre guardado.
+- **Ficha**: ahora se pueden corregir nombre/apellido/posición/nacimiento/
+  pie/altura/peso (antes solo al dar de alta), y muestra el historial de
+  partidos y estadísticas del jugador recorriendo TODAS las categorías.
+- **Datos médicos** (antes "Lesiones"): tipo de consulta (Médica, Física,
+  Nutrición, Desarrollo humano, etc.) y, si es lesión, los 9 campos de
+  futdetail (registro, causa, tipo, localización, lesión, severidad,
+  mecanismo, tratamiento inicial, reincidencia) + fecha real de
+  recuperación y estado del tratamiento editables en la tabla, días de baja
+  y desvío contra la fecha estimada. "Lesionado" = lesión sin fecha de
+  recuperación.
+- **Informes** por jugador (Trimestral/Final/Captación, período, URL) —
+  nodo nuevo `informes` (sumado a `firebase/rules.example.json`).
+- Contratos con observaciones y link; préstamos con link y **notas de
+  seguimiento** (`prestamos/<cat>/<id>/notas`).
+- Partidos: día del partido (calendario, además del nro de fecha), árbitro,
+  y sugerencias de sistema táctico.
+- Entrenamientos: se pueden cargar en varias categorías a la vez.
+
+Bugs encontrados y arreglados en el camino:
+1. **Textos con comillas se cortaban y se perdían al re-guardar.** Todo dato
+   iba directo a `innerHTML`; un `Copa "X"` dentro de `value="..."` quedaba
+   en `Copa ` y al guardar de nuevo se pisaba. Ahora todo pasa por `esc()`,
+   y los links por `url()` (bloquea `javascript:` y completa `https://`).
+2. **La citación PDF listaba a todo el plantel como suplente.** La
+   convocatoria guardaba una fila por cada jugador del plantel, convocado o
+   no. Ahora hay columna "Conv." y solo se guardan los convocados (marcar
+   Titular también lo marca), con el nombre del jugador guardado.
+3. **Re-guardar una convocatoria vieja borraba a jugadores archivados o
+   pasados de categoría** (no estaban en el plantel, así que no tenían fila,
+   y el `.set()` los eliminaba). Ahora aparecen como "fuera del plantel".
+4. **Guardados rechazados por Firebase fallaban en silencio.** Ahora un
+   cartel rojo avisa cuando la base rechaza un cambio por permisos.
+5. Las vistas ocultas seguían escuchando Firebase; ahora al cambiar de
+   vista se apagan todas las suscripciones (`apagarSuscripciones`).
+
+Probado contra el Firebase de prueba real (no simulado), desde localhost
+con el admin de prueba: ficha con comillas y `<b>` (vuelve intacto),
+convocatorias en 2 fechas (14 de 16 guardados, minutos=0 y "sustituido
+por" se conservan), citación (11 titulares + 3 suplentes), Estadísticas
+(Local/Visitante, por jugador), goleadores en Inicio, historial en la
+ficha, lesión → aparece en Inicio → alta → desaparece (29 días, +3 vs.
+estimada), consulta de Nutrición (oculta los campos de lesión), contrato
+que vence → Inicio y Reportes, préstamo con nota, Fixture general (Jornada
+4-1 y 2-2 con Cuarta+Quinta, totales y % verificados a mano), re-editar un
+partido desde "Agregar" sin borrar el día ni el Detalle, entrenamiento en
+3 categorías, filtros del plantel, rol lector (sin controles de edición),
+y celular (375px: sin scroll horizontal de página). **Sin probar todavía:
+Informes y "Pasar de categoría"** — el proyecto de prueba tiene publicadas
+las reglas viejas (sin `informes`) y Firebase los rechaza; falta publicar
+el `rules.example.json` nuevo en la consola (la sesión de Google del
+navegador venció).
+
+**2026-10-02 — Despliegue de prueba real.** Proyecto Firebase
+`plataforma-futbol-test` (plan gratuito, Realtime Database + Auth
+email/contraseña, reglas de `rules.example.json` publicadas) y sitio en
+GitHub Pages (`JaviAguilar1/plataforma-futbol-test`, rama `main`). Para no
+romper la regla de oro, la config real (`config/firebase.js`,
+`config/club.json`) se commitea SOLO en la rama local `despliegue-prueba`,
+que es la que se sube a ese repo — `master` sigue sin credenciales. Datos:
+plantel y 10 resultados reales de la 4ta de Tigre (sin fotos), sacados de un
+backup local. Usuario admin de prueba creado a mano. Verificado en el sitio
+publicado: lectura pública, login, y edición.
+
 **2026-10-02 — Revisión de punta a punta: 5 bugs reales encontrados y
 arreglados.** Se armó un simulador de Firebase en JS (guarda, lee y notifica
 cambios de verdad, no solo registra qué se llamó) para probar la app con
@@ -261,8 +349,12 @@ con `csv_generico` apuntando a su export.
 - Fase 4 (resto) — video sync queda afuera hasta saber cómo filma el club
   real; si en algún momento se suma, no reusar el de Tigre tal cual (está
   atado a YouTube + Catapult con su calibración específica).
-- Sin estadísticas de temporada por jugador (convocatorias/PJ/goles
-  acumulados) — hoy se ven partido por partido en la Convocatoria.
+- **Temporadas**: los datos no están separados por año (futdetail filtra
+  todo por temporada 2024/2025/2026). Hoy una instancia sirve para una
+  temporada; para la segunda hay que decidir si se prefijan las rutas con el
+  año o se archiva un backup y se arranca limpio. Decisión pendiente.
+- Publicar `rules.example.json` en el proyecto de prueba y probar Informes y
+  "Pasar de categoría" contra Firebase real.
 - Sin probar NADA de esto (desde Fase 1) contra un club real todavía —
   todo lo automático (Catapult, adaptadores de liga) está verificado con
   datos de prueba armados a mano, no con cuentas/sitios reales.

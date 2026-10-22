@@ -65,6 +65,18 @@
   .subtitulo:first-child{margin-top:0;}
   .panel-anidado{background:var(--fondo);border:1px solid var(--borde);border-radius:6px;padding:14px;margin:0;}
   .panel-anidado .fila-form label{flex:none;width:150px;color:#9aa4bd;font-size:.85rem;}
+  .card{overflow-x:auto;}
+  .kpis{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0;}
+  .kpi{flex:1;min-width:90px;background:var(--fondo);border:1px solid var(--borde);border-radius:6px;padding:10px;text-align:center;font-size:.8rem;color:#9aa4bd;}
+  .kpi b{display:block;font-size:1.5rem;color:var(--primario);}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-bottom:18px;}
+  .grid2 .card{margin-bottom:0;}
+  .res{display:inline-block;min-width:22px;text-align:center;border-radius:4px;font-weight:700;font-size:.78rem;padding:1px 4px;color:#111;}
+  .res-G{background:var(--verde);} .res-E{background:#c9b458;} .res-P{background:var(--rojo);color:#fff;}
+  td.celda-G{color:var(--verde);} td.celda-E{color:#c9b458;} td.celda-P{color:var(--rojo);}
+  .nota{color:#9aa4bd;font-size:.82rem;margin:0 0 6px;}
+  #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--rojo);color:#fff;padding:10px 16px;border-radius:6px;z-index:10;max-width:90vw;font-size:.9rem;}
+  @media (max-width:600px){ main{padding:12px;} header{padding:10px 12px;} nav{padding:8px 12px;} }
 </style>
 </head>
 <body>
@@ -76,11 +88,15 @@
 </header>
 
 <nav id="nav">
-  <button data-vista="plantel" class="activo">Plantel</button>
+  <button data-vista="inicio" class="activo">Inicio</button>
+  <button data-vista="plantel">Plantel</button>
   <button data-vista="partidos">Partidos</button>
+  <button data-vista="estadisticas">Estadísticas</button>
+  <button data-vista="fixture">Fixture general</button>
   <button data-vista="tabla">Tabla de posiciones</button>
   <button data-vista="confiabilidad" id="navConfiabilidad" class="oculto">Confiabilidad</button>
   <button data-vista="recursos">Recursos</button>
+  <button data-vista="reportes">Reportes</button>
 </nav>
 
 <main>
@@ -91,8 +107,12 @@
     <select id="selectorCategoria"></select>
   </div>
 
-  <section id="vistaPlantel"></section>
+  <section id="vistaInicio"></section>
+  <section id="vistaPlantel" class="oculto"></section>
   <section id="vistaPartidos" class="oculto"></section>
+  <section id="vistaEstadisticas" class="oculto"></section>
+  <section id="vistaFixture" class="oculto"></section>
+  <section id="vistaReportes" class="oculto"></section>
   <section id="vistaTabla" class="oculto"></section>
   <section id="vistaConfiabilidad" class="oculto"></section>
   <section id="vistaRecursos" class="oculto"></section>
@@ -106,6 +126,7 @@
   </div>
 </main>
 
+<div id="toast" class="oculto"></div>
 <footer>Plantilla genérica de seguimiento de club — instancia propia, sin datos compartidos con otros clubes.</footer>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -119,7 +140,7 @@ let auth = null;
 let usuario = null;
 let rolActual = null;
 let categoriaActual = null;
-let vistaActual = 'plantel';
+let vistaActual = 'inicio';
 
 let fichaAbierta = {};              // categoriaId -> jugadorId con la ficha completa abierta
 let detalleAbiertoFecha = {};       // categoriaId -> fecha con el detalle del partido abierto
@@ -128,9 +149,94 @@ const MOTIVOS_CAMBIO = ['', 'Táctico', 'Lesión', 'Fatiga', 'Disciplina'];
 const VALORACIONES = ['', 'Excelente', 'Muy buena', 'Buena', 'Regular'];
 const TIPOS_PRESTAMO = ['Préstamo a otro club', 'Convocatoria a selección'];
 const TIPOS_DOCUMENTO = ['Planificación', 'Proyecto externo', 'Rendimiento físico'];
+const TIPOS_CONSULTA = ['Médica', 'Física', 'Nutrición', 'Desarrollo humano', 'Entrenamiento', 'Entrenamiento general', 'División'];
+const LESION = {
+  registro: ['Lesión deportiva en la institución', 'Lesión deportiva fuera de la institución', 'Trastorno no lesional', 'Otra'],
+  causa: ['Traumática', 'No traumática', 'Otra'],
+  tipoLesion: ['Articular (ligamentaria / escapular)', 'Muscular', 'Ósea', 'Tendinosa', 'Otra'],
+  localizacion: ['Abdomen', 'Cabeza / Cara', 'Cadera / Ingle', 'Columna baja / Pelvis / Sacro', 'Cuello / Columna cervical',
+    'Esternón / Costillas / Columna superior', 'Hombro / Clavícula', 'Mano / Dedo / Pulgar', 'Muñeca', 'Muslo', 'Pie / Dedo',
+    'Pierna / Tendón de Aquiles', 'Rodilla', 'Tobillo', 'Otra'],
+  diagnostico: ['Conmoción', 'Contusión / Hematoma', 'Esguince / Ligamentaria', 'Fractura', 'Laceración',
+    'Lesión por sobreuso no específica', 'Luxación / Subluxación', 'Meniscal / Cartilaginosa', 'Nerviosa',
+    'Ruptura muscular / Desgarro', 'Sinovitis', 'Tendinopatía', 'Otra lesión ósea', 'Otra'],
+  severidad: ['Leve (0 días de reposo) / Consulta', 'Mínima (1-3 días de reposo)', 'Media (4-7 días de reposo)',
+    'Moderada (8-28 días de reposo)', 'Severa (más de 28 días de reposo)', 'Otra'],
+  mecanismo: ['Barriendo / Tackling', 'Cabezazo', 'Caída', 'Carrera / Sprint', 'Choque / Colisión', 'Deslizamiento',
+    'Elongación / Stretching', 'Giro / Pivot', 'Golpe por pelota', 'Obstrucción', 'Pase', 'Patada',
+    'Recibiendo barrida / Tackle', 'Regate / Dribbling', 'Remate', 'Salto / Aterrizaje', 'Sobreuso', 'Uso del brazo / Codo', 'Otro'],
+  tratamientoInicial: ['Inmovilizador', 'Conservador (continúa diferenciado / disminuye carga)', 'Quirúrgico', 'Otro'],
+  reincidencia: ['No', 'Sí', 'Desconocido'],
+};
+const ESTADOS_TRATAMIENTO = ['En tratamiento', 'Readaptación', 'Alta'];
+const TIPOS_INFORME = ['Trimestral', 'Final', 'Captación'];
+let notasPrestamoAbierto = {}; // categoriaId -> prestamoId con las notas abiertas
+const SISTEMAS_TACTICOS = ['1-4-4-2', '1-4-3-3', '1-4-2-3-1', '1-4-1-4-1', '1-4-4-1-1', '1-4-1-3-2', '1-4-2-1-3', '1-3-5-2', '1-3-4-3', '1-3-4-1-2', '1-5-3-2', '1-5-4-1'];
 let mostrarArchivados = {}; // categoriaId -> bool
+let filtrosPlantel = {};     // categoriaId -> {nombre, pos, edadMax, valoracion}
+let filtroCompetencia = {};  // categoriaId -> competencia elegida en Estadísticas
+let fixtureGrupo = null, fixtureCompetencia = '';
+let filtrosReportes = {libDesde:'', libHasta:'', libPos:'', conDesde:'', conHasta:''};
+const NODOS_POR_JUGADOR = ['lesiones', 'contratos', 'prestamos', 'multimedia', 'informes'];
+
+// Todo dato cargado por usuarios pasa por esc() antes de ir a innerHTML: sin
+// esto, un texto con comillas se corta dentro de value="..." y al re-guardar
+// se pierde el resto.
+function esc(v){
+  return String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function url(u){
+  u = String(u ?? '').trim();
+  if(!u) return '';
+  if(/^[a-z][a-z0-9+.-]*:/i.test(u)) return /^https?:/i.test(u) ? esc(u) : '';
+  return esc('https://'+u);
+}
+
+function fechaCorta(iso, anioCompleto){
+  if(!iso) return '';
+  const [a,m,d] = String(iso).split('-');
+  return d ? `${d}-${m}-${anioCompleto ? a : a.slice(2)}` : iso;
+}
+function hoyISO(desplazamientoMeses){
+  const h = new Date();
+  if(desplazamientoMeses) h.setMonth(h.getMonth() + desplazamientoMeses);
+  return new Date(h.getTime() - h.getTimezoneOffset()*60000).toISOString().slice(0,10);
+}
+function edadDe(fechaNac){
+  if(!fechaNac) return '';
+  const n = new Date(fechaNac+'T00:00:00'), h = new Date();
+  let e = h.getFullYear() - n.getFullYear();
+  if(h.getMonth() < n.getMonth() || (h.getMonth() === n.getMonth() && h.getDate() < n.getDate())) e--;
+  return e;
+}
+function nombreCategoria(id){ return CLUB.temporada.categorias.find(c=>c.id===id)?.nombre || id; }
+const sinAcentos = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function nombreCompleto(j){ return j ? `${j.apellido||''}, ${j.nombre||''}` : ''; }
+
+// Al cambiar de vista se apagan los listeners de todas las demás (si no,
+// vistas ocultas siguen bajando datos de Firebase en cada cambio).
+const _listasRefs = new Set();
+function apagarSuscripciones(){
+  _listasRefs.forEach(lista=>{ lista.forEach(r=>r.ref.off('value', r.cb)); lista.length = 0; });
+}
+// Sin esto, un guardado rechazado por Firebase (rol sin permiso, reglas
+// desactualizadas) fallaba en silencio y el usuario creía que se había guardado.
+window.addEventListener('unhandledrejection', e=>{
+  if(/PERMISSION_DENIED/i.test(String(e.reason?.message || e.reason))){
+    mostrarToast('No se pudo guardar: la base de datos rechazó el cambio por permisos. Revisá tu rol o las reglas de Firebase.');
+  }
+});
+let _toastTimer = null;
+function mostrarToast(texto){
+  const el = document.getElementById('toast');
+  el.textContent = texto;
+  el.classList.remove('oculto');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(()=>el.classList.add('oculto'), 7000);
+}
 
 function suscribirRefs(listaRefs, pares){
+  _listasRefs.add(listaRefs);
   listaRefs.forEach(r=>r.ref.off('value', r.cb));
   listaRefs.length = 0;
   pares.forEach(([ruta, onDato])=>{
@@ -230,7 +336,7 @@ function actualizarEstadoSesion(){
   if(usuario){
     const rol = rolActual ? rolDe(rolActual) : null;
     const nombreRol = rol ? (typeof rol === 'string' ? rol : rol.nombre) : rolActual;
-    el.innerHTML = (rolActual ? `<span class="tag-rol">${nombreRol}</span> ` : '')
+    el.innerHTML = (rolActual ? `<span class="tag-rol">${esc(nombreRol)}</span> ` : '')
       + usuario.email + ' <button class="secundario" onclick="hacerLogout()">Salir</button>';
   } else {
     el.innerHTML = '<button class="secundario" onclick="mostrarLogin()">Ingresar</button>';
@@ -254,17 +360,354 @@ document.getElementById('nav').addEventListener('click', e=>{
   renderVistaActual();
 });
 
+const VISTAS_DE_TODO_EL_CLUB = ['fixture', 'reportes'];
 function renderVistaActual(){
-  document.getElementById('vistaPlantel').classList.add('oculto');
-  document.getElementById('vistaPartidos').classList.add('oculto');
-  document.getElementById('vistaTabla').classList.add('oculto');
-  document.getElementById('vistaConfiabilidad').classList.add('oculto');
-  document.getElementById('vistaRecursos').classList.add('oculto');
-  if(vistaActual==='plantel') renderPlantel();
-  if(vistaActual==='partidos') renderPartidos();
-  if(vistaActual==='tabla') renderTabla();
-  if(vistaActual==='confiabilidad') renderConfiabilidad();
-  if(vistaActual==='recursos') renderRecursos();
+  apagarSuscripciones();
+  document.querySelectorAll('main > section').forEach(s=>s.classList.add('oculto'));
+  document.getElementById('vistaLogin').classList.add('oculto');
+  document.getElementById('selectorCategoriaWrap').classList.toggle('oculto', VISTAS_DE_TODO_EL_CLUB.includes(vistaActual));
+  ({
+    inicio: renderInicio, plantel: renderPlantel, partidos: renderPartidos, estadisticas: renderEstadisticas,
+    fixture: renderFixture, tabla: renderTabla, confiabilidad: renderConfiabilidad, recursos: renderRecursos,
+    reportes: renderReportes,
+  })[vistaActual]();
+}
+
+// ---------- Cálculos compartidos (Inicio / Estadísticas / Fixture / ficha) ----------
+// G/E/P sale del campo "resultado" que se elige a mano; si no está, de los goles.
+function desenlace(p){
+  if(!p) return null;
+  const r = {Victoria:'G', Empate:'E', Derrota:'P'}[p.resultado];
+  if(r) return r;
+  if(p.resultado === 'No Disputado' || p.golesFavor == null || p.golesContra == null) return null;
+  return p.golesFavor > p.golesContra ? 'G' : p.golesFavor < p.golesContra ? 'P' : 'E';
+}
+function resumenEquipo(lista){
+  const r = {pj:0, g:0, e:0, p:0, gf:0, gc:0};
+  lista.forEach(p=>{
+    const x = desenlace(p);
+    if(!x) return;
+    r.pj++; r[x.toLowerCase()]++;
+    r.gf += Number(p.golesFavor)||0; r.gc += Number(p.golesContra)||0;
+  });
+  r.pts = r.g*3 + r.e;
+  r.pct = r.pj ? (r.pts*100/(r.pj*3)).toFixed(1) : '0.0';
+  return r;
+}
+function kpisHTML(r){
+  return `<div class="kpis">${[['Partidos', r.pj], ['Ganados', r.g], ['Empatados', r.e], ['Perdidos', r.p],
+    ['Goles a favor', r.gf], ['Goles en contra', r.gc], ['% de puntos', r.pct+'%']]
+    .map(([t,v])=>`<div class="kpi"><b>${v}</b>${t}</div>`).join('')}</div>`;
+}
+function statsJugadores(convocatorias, partidos, competencia){
+  const st = {};
+  Object.entries(convocatorias||{}).forEach(([fecha, conv])=>{
+    if(competencia && (partidos?.[fecha]?.competencia || '') !== competencia) return;
+    Object.entries(conv||{}).forEach(([jid,c])=>{
+      const x = st[jid] || (st[jid] = {jugador:'', conv:0, tit:0, min:0, goles:0, asist:0, ta:0, tr:0, dest:0});
+      if(c.jugador) x.jugador = c.jugador;
+      x.conv++; if(c.titular) x.tit++;
+      x.min += Number(c.minutos)||0; x.goles += Number(c.goles)||0; x.asist += Number(c.asistencias)||0;
+      if(c.amarilla) x.ta++; if(c.roja) x.tr++; if(c.destacado) x.dest++;
+    });
+  });
+  return st;
+}
+function competenciasDe(partidos){
+  return [...new Set(Object.values(partidos||{}).map(p=>p.competencia).filter(Boolean))].sort();
+}
+const badge = x => x ? `<span class="res res-${x}">${x}</span>` : '';
+
+// ---------- Inicio ----------
+let _refsInicio = [];
+function renderInicio(){
+  const sec = document.getElementById('vistaInicio');
+  sec.classList.remove('oculto');
+  if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver y cargar datos.</p>'; return; }
+  const d = {plantel:{}, lesiones:{}, contratos:{}, partidos:{}, convocatorias:{}};
+  const rerender = ()=>{ sec.innerHTML = inicioHTML(d); };
+  suscribirRefs(_refsInicio, Object.keys(d).map(k=>[k, v=>{ d[k]=v; rerender(); }]));
+}
+
+function inicioHTML(d){
+  const cat = categoriaActual;
+  const hoy = hoyISO(), en6Meses = hoyISO(6);
+  const mes = hoy.slice(5,7), dia = hoy.slice(8,10);
+  const jugadorDe = (c, id) => d.plantel[c]?.[id];
+  const nombreEn = (c, id, respaldo) => jugadorDe(c,id) ? nombreCompleto(jugadorDe(c,id)) : (respaldo || '(jugador no encontrado)');
+
+  const cumples = [];
+  Object.entries(d.plantel).forEach(([c, pl])=> Object.values(pl||{}).forEach(j=>{
+    if(!j.archivado && (j.fechaNacimiento||'').slice(5,7) === mes) cumples.push({c, j});
+  }));
+  cumples.sort((a,b)=> a.j.fechaNacimiento.slice(8,10).localeCompare(b.j.fechaNacimiento.slice(8,10)));
+  const cumplesHoy = cumples.filter(x=> x.j.fechaNacimiento.slice(8,10) === dia);
+
+  const lesionados = [];
+  Object.entries(d.lesiones).forEach(([c, ls])=> Object.values(ls||{}).forEach(l=>{ if(lesionActiva(l)) lesionados.push({c, l}); }));
+  lesionados.sort((a,b)=> (a.l.fechaEstimadaRecuperacion||'9').localeCompare(b.l.fechaEstimadaRecuperacion||'9'));
+
+  const contratos = [];
+  Object.entries(d.contratos).forEach(([c, cs])=> Object.values(cs||{}).forEach(k=>{
+    if(k.fechaFin && k.fechaFin >= hoy && k.fechaFin <= en6Meses) contratos.push({c, k});
+  }));
+  contratos.sort((a,b)=> a.k.fechaFin.localeCompare(b.k.fechaFin));
+
+  const partidosCat = d.partidos[cat] || {};
+  const r = resumenEquipo(Object.values(partidosCat));
+  const ultimos = Object.entries(partidosCat).filter(([,p])=>desenlace(p)).sort((a,b)=>(+b[0])-(+a[0])).slice(0,5);
+  const st = Object.entries(statsJugadores(d.convocatorias[cat], partidosCat));
+  const top = campo => st.filter(([,x])=>x[campo]>0).sort((a,b)=>b[1][campo]-a[1][campo]).slice(0,5);
+  const listaTop = (campo, vacio) => {
+    const t = top(campo);
+    return t.length ? `<table><tbody>${t.map(([jid,x])=>`<tr><td>${esc(nombreEn(cat, jid, x.jugador))}</td><td style="text-align:right;"><b>${x[campo]}</b></td></tr>`).join('')}</tbody></table>`
+      : `<p class="nota">${vacio}</p>`;
+  };
+
+  return `
+  <div class="card">
+    <h2>Resumen — ${esc(nombreCategoria(cat))}</h2>
+    ${kpisHTML(r)}
+    <div class="subtitulo">Últimos partidos</div>
+    ${ultimos.length ? `<table><tbody>${ultimos.map(([f,p])=>`<tr>
+      <td>Fecha ${f}</td><td>${esc(fechaCorta(p.fechaPartido))}</td><td>${esc(p.rival)}</td><td>${esc(p.localia)}</td>
+      <td>${p.golesFavor ?? ''} - ${p.golesContra ?? ''}</td><td>${badge(desenlace(p))}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="nota">Sin partidos jugados cargados.</p>'}
+  </div>
+  <div class="grid2">
+    <div class="card"><h2>Goleadores</h2>${listaTop('goles', 'Sin goles cargados en las convocatorias.')}</div>
+    <div class="card"><h2>Asistencias</h2>${listaTop('asist', 'Sin asistencias cargadas en las convocatorias.')}</div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h2>Lesionados (todo el club)</h2>
+      ${lesionados.length ? `<table><thead><tr><th>Jugador</th><th>Categoría</th><th>Lesión</th><th>Desde</th><th>F. estimada</th></tr></thead><tbody>
+      ${lesionados.map(({c,l})=>`<tr><td>${esc(nombreEn(c, l.jugadorId))}</td><td>${esc(nombreCategoria(c))}</td><td>${esc(l.diagnostico || l.observaciones)}</td>
+        <td>${esc(fechaCorta(l.fechaInicio))}</td><td>${esc(fechaCorta(l.fechaEstimadaRecuperacion))}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="nota">No hay jugadores lesionados.</p>'}
+    </div>
+    <div class="card">
+      <h2>Contratos que vencen en 6 meses</h2>
+      ${contratos.length ? `<table><thead><tr><th>Jugador</th><th>Categoría</th><th>Vence</th></tr></thead><tbody>
+      ${contratos.map(({c,k})=>`<tr><td>${esc(nombreEn(c, k.jugadorId))}</td><td>${esc(nombreCategoria(c))}</td><td>${esc(fechaCorta(k.fechaFin, true))}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="nota">Ningún contrato vence en los próximos 6 meses.</p>'}
+    </div>
+  </div>
+  <div class="card">
+    <h2>Cumpleaños del mes (todo el club)</h2>
+    ${cumplesHoy.length ? `<div class="aviso">Hoy cumple${cumplesHoy.length>1?'n':''}: ${cumplesHoy.map(({c,j})=>`<b>${esc(nombreCompleto(j))}</b> (${esc(nombreCategoria(c))}, ${edadDe(j.fechaNacimiento)} años)`).join(', ')}</div>` : ''}
+    ${cumples.length ? `<table><thead><tr><th>Jugador</th><th>Categoría</th><th>Día</th><th>Cumple</th></tr></thead><tbody>
+    ${cumples.map(({c,j})=>{
+      const diaN = j.fechaNacimiento.slice(8,10);
+      const cumpleAnios = Number(hoy.slice(0,4)) - Number(j.fechaNacimiento.slice(0,4));
+      return `<tr${diaN===dia?' style="font-weight:700;"':''}><td>${esc(nombreCompleto(j))}</td><td>${esc(nombreCategoria(c))}</td><td>${diaN}/${mes}</td><td>${cumpleAnios} años</td></tr>`;
+    }).join('')}</tbody></table>` : '<p class="nota">Nadie cumple años este mes (o falta cargar la fecha de nacimiento).</p>'}
+  </div>`;
+}
+
+// ---------- Estadísticas (por categoría) ----------
+let _refsEstadisticas = [];
+function renderEstadisticas(){
+  const sec = document.getElementById('vistaEstadisticas');
+  sec.classList.remove('oculto');
+  if(!categoriaActual){ sec.innerHTML = '<p>No hay categorías configuradas.</p>'; return; }
+  if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver esto.</p>'; return; }
+  const cat = categoriaActual;
+  let partidos = {}, convocatorias = {}, plantel = {};
+  const rerender = ()=>{ sec.innerHTML = estadisticasHTML(cat, partidos, convocatorias, plantel); };
+  suscribirRefs(_refsEstadisticas, [
+    ['partidos/'+cat, v=>{ partidos=v; rerender(); }],
+    ['convocatorias/'+cat, v=>{ convocatorias=v; rerender(); }],
+    ['plantel/'+cat, v=>{ plantel=v; rerender(); }],
+  ]);
+}
+function cambiarFiltroCompetencia(v){ filtroCompetencia[categoriaActual] = v; renderVistaActual(); }
+
+function estadisticasHTML(cat, partidos, convocatorias, plantel){
+  const comps = competenciasDe(partidos);
+  const comp = comps.includes(filtroCompetencia[cat]) ? filtroCompetencia[cat] : '';
+  const lista = Object.values(partidos).filter(p=> !comp || (p.competencia||'') === comp);
+  const total = resumenEquipo(lista);
+  const filaRes = (t,r)=>`<tr><td>${t}</td><td>${r.pj}</td><td>${r.g}</td><td>${r.e}</td><td>${r.p}</td><td>${r.gf}</td><td>${r.gc}</td><td>${r.gf-r.gc}</td><td>${r.pct}%</td></tr>`;
+  const sistemas = {};
+  lista.forEach(p=>{ if(p.sistemaTactico) sistemas[p.sistemaTactico] = (sistemas[p.sistemaTactico]||0) + 1; });
+  const filas = Object.entries(statsJugadores(convocatorias, partidos, comp))
+    .sort((a,b)=> b[1].tit-a[1].tit || b[1].min-a[1].min)
+    .map(([jid,x])=>`<tr>
+      <td>${esc(plantel[jid] ? nombreCompleto(plantel[jid]) : (x.jugador || '(fuera del plantel)'))}</td>
+      <td>${x.conv}</td><td>${x.tit}</td><td>${x.min}</td><td>${x.goles}</td><td>${x.asist}</td><td>${x.ta}</td><td>${x.tr}</td><td>${x.dest}</td>
+    </tr>`).join('');
+  return `
+  <div class="card">
+    <h2>Estadísticas — ${esc(nombreCategoria(cat))}</h2>
+    <div class="fila-form"><label style="flex:none;">Competencia</label>
+      <select onchange="cambiarFiltroCompetencia(this.value)"><option value="">Todas</option>${comps.map(c=>`<option value="${esc(c)}" ${c===comp?'selected':''}>${esc(c)}</option>`).join('')}</select>
+    </div>
+    ${kpisHTML(total)}
+    <table>
+      <thead><tr><th></th><th>PJ</th><th>G</th><th>E</th><th>P</th><th>GF</th><th>GC</th><th>Dif.</th><th>% puntos</th></tr></thead>
+      <tbody>
+        ${filaRes('Local', resumenEquipo(lista.filter(p=>p.localia==='Local')))}
+        ${filaRes('Visitante', resumenEquipo(lista.filter(p=>p.localia==='Visitante')))}
+        ${filaRes('Total', total)}
+      </tbody>
+    </table>
+    ${Object.keys(sistemas).length ? `<div class="subtitulo" style="margin-top:16px;">Sistemas utilizados</div>
+    <table><tbody>${Object.entries(sistemas).sort((a,b)=>b[1]-a[1]).map(([x,n])=>`<tr><td>${esc(x)}</td><td>${n} partido${n>1?'s':''}</td></tr>`).join('')}</tbody></table>` : ''}
+  </div>
+  <div class="card">
+    <h2>Estadísticas por jugador</h2>
+    <p class="nota">Sale de las convocatorias cargadas en cada partido.</p>
+    <table>
+      <thead><tr><th>Jugador</th><th>Convocatorias</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th><th>Destacado</th></tr></thead>
+      <tbody>${filas || '<tr><td colspan="9">Todavía no hay convocatorias cargadas.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+
+// ---------- Fixture general (todas las categorías de un grupo, fecha por fecha) ----------
+// "Jornada" = puntos que sumó el club contra los que sumó el rival entre todas
+// las categorías que jugaron esa fecha (así se lee el fixture de juveniles AFA).
+let _refsFixture = [];
+function gruposFixture(){
+  const cats = CLUB.temporada.categorias;
+  return [
+    {id:'juveniles', nombre:'Juveniles', cats: cats.filter(c=>!c.esReserva)},
+    {id:'reserva', nombre:'Reserva', cats: cats.filter(c=>c.esReserva)},
+  ].filter(g=>g.cats.length);
+}
+function renderFixture(){
+  const sec = document.getElementById('vistaFixture');
+  sec.classList.remove('oculto');
+  if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver esto.</p>'; return; }
+  suscribirRefs(_refsFixture, [['partidos', v=>{ sec.innerHTML = fixtureHTML(v); }]]);
+}
+function cambiarFixture(grupo, competencia){ fixtureGrupo = grupo; fixtureCompetencia = competencia; renderVistaActual(); }
+
+function fixtureHTML(todos){
+  const grupos = gruposFixture();
+  const grupo = grupos.find(g=>g.id===fixtureGrupo) || grupos[0];
+  if(!grupo) return '<div class="card"><p>No hay categorías configuradas.</p></div>';
+  const cats = grupo.cats;
+  const comps = [...new Set(cats.flatMap(c=>competenciasDe(todos[c.id])))].sort();
+  const comp = comps.includes(fixtureCompetencia) ? fixtureCompetencia : '';
+  const porCat = Object.fromEntries(cats.map(c=>[c.id,
+    Object.fromEntries(Object.entries(todos[c.id]||{}).filter(([,p])=> !comp || (p.competencia||'') === comp))]));
+  const fechas = [...new Set(cats.flatMap(c=>Object.keys(porCat[c.id])))].sort((a,b)=>a-b);
+  const tot = Object.fromEntries(cats.map(c=>[c.id, {gf:0, gc:0}]));
+  const jugados = [];
+  let ptsClubTot = 0, ptsRivalTot = 0;
+  const filas = fechas.map(f=>{
+    let rival = '', dia = '', ptsClub = 0, ptsRival = 0, hubo = false;
+    const celdas = cats.map(c=>{
+      const p = porCat[c.id][f];
+      if(!p) return '<td></td><td></td><td></td>';
+      rival = rival || p.rival || ''; dia = dia || p.fechaPartido || '';
+      const x = desenlace(p);
+      const loc = {Local:'L', Visitante:'V'}[p.localia] || '';
+      if(!x) return `<td></td><td></td><td>${loc}</td>`;
+      hubo = true; jugados.push(p);
+      tot[c.id].gf += Number(p.golesFavor)||0; tot[c.id].gc += Number(p.golesContra)||0;
+      ptsClub += {G:3, E:1, P:0}[x]; ptsRival += {G:0, E:1, P:3}[x];
+      return `<td class="celda-${x}">${p.golesFavor ?? ''}</td><td class="celda-${x}">${p.golesContra ?? ''}</td><td>${loc}</td>`;
+    }).join('');
+    ptsClubTot += ptsClub; ptsRivalTot += ptsRival;
+    return `<tr><td>${f}</td><td>${esc(fechaCorta(dia))}</td><td>${esc(rival)}</td>${celdas}<td>${hubo ? `<b>${ptsClub}</b> - ${ptsRival}` : ''}</td></tr>`;
+  }).join('');
+  const r = resumenEquipo(jugados);
+  return `
+  <div class="card">
+    <h2>Fixture general — ${esc(grupo.nombre)}</h2>
+    <div class="fila-form">
+      ${grupos.length > 1 ? `<select onchange="cambiarFixture(this.value, '')">${grupos.map(g=>`<option value="${g.id}" ${g.id===grupo.id?'selected':''}>${esc(g.nombre)}</option>`).join('')}</select>` : ''}
+      <select onchange="cambiarFixture('${grupo.id}', this.value)"><option value="">Todas las competencias</option>${comps.map(c=>`<option value="${esc(c)}" ${c===comp?'selected':''}>${esc(c)}</option>`).join('')}</select>
+    </div>
+    ${kpisHTML(r)}
+    <table>
+      <thead>
+        <tr><th rowspan="2">Fecha</th><th rowspan="2">Día</th><th rowspan="2">Rival</th>${cats.map(c=>`<th colspan="3" style="text-align:center;">${esc(c.nombre)}</th>`).join('')}<th rowspan="2">Jornada</th></tr>
+        <tr>${cats.map(()=>'<th>GF</th><th>GC</th><th>L/V</th>').join('')}</tr>
+      </thead>
+      <tbody>${filas || `<tr><td colspan="${4 + cats.length*3}">Sin partidos cargados.</td></tr>`}</tbody>
+      ${filas ? `<tfoot><tr><th colspan="3">Totales</th>${cats.map(c=>`<th>${tot[c.id].gf}</th><th>${tot[c.id].gc}</th><th></th>`).join('')}<th>${ptsClubTot} - ${ptsRivalTot}</th></tr></tfoot>` : ''}
+    </table>
+  </div>`;
+}
+
+// ---------- Reportes (todo el club) ----------
+let _refsReportes = [];
+function renderReportes(){
+  const sec = document.getElementById('vistaReportes');
+  sec.classList.remove('oculto');
+  if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver esto.</p>'; return; }
+  const d = {plantel:{}, contratos:{}, prestamos:{}};
+  suscribirRefs(_refsReportes, Object.keys(d).map(k=>[k, v=>{ d[k]=v; sec.innerHTML = reportesHTML(d); }]));
+}
+function cambiarFiltroReporte(campo, valor){ filtrosReportes[campo] = valor; renderVistaActual(); }
+
+function reportesHTML(d){
+  const f = filtrosReportes;
+  const hoy = hoyISO();
+  const jugadorDe = (c, id) => d.plantel[c]?.[id] || {};
+  const inp = (campo, titulo) => `<input type="date" title="${titulo}" value="${esc(f[campo])}" onchange="cambiarFiltroReporte('${campo}', this.value)">`;
+
+  const liberados = [];
+  Object.entries(d.plantel).forEach(([c, pl])=> Object.values(pl||{}).forEach(j=>{
+    const fl = j.fechaLiberado || '';
+    if(!j.archivado) return;
+    if(f.libDesde && fl < f.libDesde) return;
+    if(f.libHasta && (!fl || fl > f.libHasta)) return;
+    if(f.libPos && j.posicion !== f.libPos) return;
+    liberados.push({c, j});
+  }));
+  liberados.sort((a,b)=> (b.j.fechaLiberado||'').localeCompare(a.j.fechaLiberado||''));
+
+  const contratos = [];
+  Object.entries(d.contratos).forEach(([c, cs])=> Object.values(cs||{}).forEach(k=>{
+    if(f.conDesde && (k.fechaFin||'') < f.conDesde) return;
+    if(f.conHasta && (k.fechaFin||'') > f.conHasta) return;
+    contratos.push({c, k, j: jugadorDe(c, k.jugadorId)});
+  }));
+  contratos.sort((a,b)=> (a.k.fechaFin||'').localeCompare(b.k.fechaFin||''));
+
+  const prestamos = [];
+  Object.entries(d.prestamos).forEach(([c, ps])=> Object.values(ps||{}).forEach(p=>{
+    if(!p.fechaFin || p.fechaFin >= hoy) prestamos.push({c, p, j: jugadorDe(c, p.jugadorId)});
+  }));
+
+  return `
+  <div class="card">
+    <h2>Jugadores liberados / archivados</h2>
+    <div class="fila-form">
+      ${inp('libDesde', 'Liberado desde')} ${inp('libHasta', 'Liberado hasta')}
+      <select onchange="cambiarFiltroReporte('libPos', this.value)"><option value="">Todas las posiciones</option>${CLUB.posiciones.map(p=>`<option value="${esc(p.codigo)}" ${f.libPos===p.codigo?'selected':''}>${esc(p.nombre)}</option>`).join('')}</select>
+    </div>
+    <table>
+      <thead><tr><th>Jugador</th><th>Categoría</th><th>Posición</th><th>Edad</th><th>Nacionalidad</th><th>Fecha liberado</th></tr></thead>
+      <tbody>${liberados.map(({c,j})=>`<tr><td>${esc(nombreCompleto(j))}</td><td>${esc(nombreCategoria(c))}</td><td>${esc(nombrePosicion(j.posicion))}</td>
+        <td>${edadDe(j.fechaNacimiento)}</td><td>${esc(j.nacionalidad)}</td><td>${esc(fechaCorta(j.fechaLiberado, true))}</td></tr>`).join('')
+        || '<tr><td colspan="6">Sin jugadores liberados con esos filtros.</td></tr>'}</tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h2>Jugadores con contrato</h2>
+    <div class="fila-form">${inp('conDesde', 'Fin de contrato desde')} ${inp('conHasta', 'Fin de contrato hasta')}</div>
+    <table>
+      <thead><tr><th>Jugador</th><th>Categoría</th><th>Posición</th><th>Edad</th><th>Inicio</th><th>Fin</th></tr></thead>
+      <tbody>${contratos.map(({c,k,j})=>`<tr${k.fechaFin && k.fechaFin < hoy ? ' style="opacity:.55;"' : ''}><td>${esc(nombreCompleto(j))}</td><td>${esc(nombreCategoria(c))}</td>
+        <td>${esc(nombrePosicion(j.posicion))}</td><td>${edadDe(j.fechaNacimiento)}</td><td>${esc(fechaCorta(k.fechaInicio, true))}</td><td>${esc(fechaCorta(k.fechaFin, true))}</td></tr>`).join('')
+        || '<tr><td colspan="6">Sin contratos con esos filtros.</td></tr>'}</tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h2>Préstamos y convocatorias vigentes</h2>
+    <table>
+      <thead><tr><th>Jugador</th><th>Categoría</th><th>Tipo</th><th>Club / selección</th><th>Desde</th><th>Hasta</th></tr></thead>
+      <tbody>${prestamos.map(({c,p,j})=>`<tr><td>${esc(nombreCompleto(j))}</td><td>${esc(nombreCategoria(c))}</td><td>${esc(p.tipo)}</td>
+        <td>${esc(p.clubOSeleccion)}</td><td>${esc(fechaCorta(p.fechaInicio, true))}</td><td>${esc(fechaCorta(p.fechaFin, true))}</td></tr>`).join('')
+        || '<tr><td colspan="6">No hay préstamos ni convocatorias vigentes.</td></tr>'}</tbody>
+    </table>
+  </div>`;
 }
 
 // ---------- Plantel ----------
@@ -275,13 +718,16 @@ function renderPlantel(){
   if(!categoriaActual){ sec.innerHTML = '<p>No hay categorías configuradas.</p>'; return; }
   if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver y cargar datos.</p>'; return; }
   const cat = categoriaActual;
-  let plantelDatos = {}, lesionesDatos = {}, contratosDatos = {}, prestamosDatos = {}, multimediaDatos = {};
+  let plantelDatos = {}, lesionesDatos = {}, contratosDatos = {}, prestamosDatos = {}, multimediaDatos = {}, informesDatos = {};
   const rerender = ()=>{
     sec.innerHTML = plantelHTML(plantelDatos)
       + lesionesHTML(plantelDatos, lesionesDatos)
       + contratosHTML(plantelDatos, contratosDatos)
       + prestamosHTML(plantelDatos, prestamosDatos)
-      + multimediaHTML(plantelDatos, multimediaDatos);
+      + multimediaHTML(plantelDatos, multimediaDatos)
+      + informesHTML(plantelDatos, informesDatos);
+    const abierta = fichaAbierta[cat];
+    if(abierta && plantelDatos[abierta]) cargarHistorialJugador(abierta);
   };
   suscribirRefs(_refsPlantel, [
     ['plantel/'+cat, v=>{ plantelDatos=v; rerender(); }],
@@ -289,58 +735,115 @@ function renderPlantel(){
     ['contratos/'+cat, v=>{ contratosDatos=v; rerender(); }],
     ['prestamos/'+cat, v=>{ prestamosDatos=v; rerender(); }],
     ['multimedia/'+cat, v=>{ multimediaDatos=v; rerender(); }],
+    ['informes/'+cat, v=>{ informesDatos=v; rerender(); }],
   ]);
 }
 
 function plantelHTML(datosCompletos){
   const cat = categoriaActual;
   const verArchivados = !!mostrarArchivados[cat];
-  const datos = Object.fromEntries(
-    Object.entries(datosCompletos).filter(([,j])=> verArchivados || !j.archivado)
-  );
-  const opcionesPos = CLUB.posiciones.map(p=>`<option value="${p.codigo}">${p.nombre}</option>`).join('');
+  const f = filtrosPlantel[cat] || {};
+  const ordenPos = codigo => { const i = CLUB.posiciones.findIndex(p=>p.codigo===codigo); return i < 0 ? 999 : i; };
+  const datos = Object.entries(datosCompletos).filter(([,j])=>
+      (verArchivados || !j.archivado)
+      && (!f.nombre || sinAcentos(nombreCompleto(j)).includes(sinAcentos(f.nombre)))
+      && (!f.pos || j.posicion === f.pos)
+      && (!f.edadMax || (j.fechaNacimiento && edadDe(j.fechaNacimiento) <= Number(f.edadMax)))
+      && (!f.valoracion || j.valoracion === f.valoracion))
+    .sort((a,b)=> ordenPos(a[1].posicion) - ordenPos(b[1].posicion) || nombreCompleto(a[1]).localeCompare(nombreCompleto(b[1])));
+  const editar = puedeEditar();
+  const columnas = editar ? 9 : 8;
+  const opcionesPos = CLUB.posiciones.map(p=>`<option value="${esc(p.codigo)}">${esc(p.nombre)}</option>`).join('');
   const idAbierto = fichaAbierta[cat];
-  const filas = Object.entries(datos).map(([id,j])=>{
+  const filas = datos.map(([id,j])=>{
     const abierta = id === idAbierto;
-    const filaExtra = abierta ? `<tr><td colspan="7">${fichaExtraHTML(id, j)}</td></tr>` : '';
+    const filaExtra = abierta ? `<tr><td colspan="${columnas}">${fichaExtraHTML(id, j)}</td></tr>` : '';
     return `
     <tr${j.archivado?' style="opacity:.55;"':''}>
-      <td>${j.apellido||''}, ${j.nombre||''}${j.archivado?' <span class="tag-rol" style="background:var(--borde);">archivado</span>':''}</td>
-      <td>${nombrePosicion(j.posicion)}</td>
-      <td>${j.fechaNacimiento||''}</td>
-      <td>${j.pieHabil||''}</td>
-      <td>${j.altura||''}</td>
-      <td>${j.peso||''}</td>
+      ${editar?`<td><input type="checkbox" class="chkPase" value="${id}"></td>`:''}
+      <td>${esc(nombreCompleto(j))}${j.archivado?' <span class="tag-rol" style="background:var(--borde);">archivado</span>':''}</td>
+      <td>${esc(nombrePosicion(j.posicion))}</td>
+      <td>${esc(fechaCorta(j.fechaNacimiento, true))}</td>
+      <td>${edadDe(j.fechaNacimiento)}</td>
+      <td>${esc(j.pieHabil)}</td>
+      <td>${esc(j.altura)}</td>
+      <td>${esc(j.peso)}</td>
       <td>
         <button class="secundario" onclick="toggleFicha('${id}')">${abierta?'Cerrar ficha':'Ver ficha'}</button>
         <button class="secundario" onclick="exportarFichaJugador('${id}')">PDF</button>
-        ${puedeEditar()?`<button class="peligro" onclick="borrarJugador('${id}')">Borrar</button>`:''}
+        ${editar?`<button class="peligro" onclick="borrarJugador('${id}')">Borrar</button>`:''}
       </td>
     </tr>${filaExtra}`;
   }).join('');
+  const otrasCats = CLUB.temporada.categorias.filter(c=>c.id!==cat);
   return `
   <div class="card">
     <h2>Plantel</h2>
-    ${puedeEditar()?`
+    ${editar?`
     <div class="fila-form">
       <input id="pNombre" placeholder="Nombre">
       <input id="pApellido" placeholder="Apellido">
       <select id="pPosicion">${opcionesPos}</select>
-      <input id="pFechaNac" type="date">
+      <input id="pFechaNac" type="date" title="Fecha de nacimiento">
       <select id="pPieHabil"><option value="Derecho">Derecho</option><option value="Izquierdo">Izquierdo</option><option value="Ambos">Ambos</option></select>
       <input id="pAltura" type="number" placeholder="Altura (cm)">
       <input id="pPeso" type="number" placeholder="Peso (kg)">
       <button class="accion" onclick="agregarJugador()">Agregar</button>
     </div>`:''}
+    <div class="fila-form">
+      <input placeholder="Buscar por nombre" value="${esc(f.nombre)}" onchange="cambiarFiltroPlantel('nombre', this.value)">
+      <select onchange="cambiarFiltroPlantel('pos', this.value)"><option value="">Todas las posiciones</option>${CLUB.posiciones.map(p=>`<option value="${esc(p.codigo)}" ${f.pos===p.codigo?'selected':''}>${esc(p.nombre)}</option>`).join('')}</select>
+      <input type="number" placeholder="Edad máxima" value="${esc(f.edadMax)}" onchange="cambiarFiltroPlantel('edadMax', this.value)">
+      <select onchange="cambiarFiltroPlantel('valoracion', this.value)">${VALORACIONES.map(v=>`<option value="${v}" ${(f.valoracion||'')===v?'selected':''}>${v||'Todas las valoraciones'}</option>`).join('')}</select>
+    </div>
     <label style="display:inline-flex;align-items:center;gap:6px;font-size:.85rem;color:#9aa4bd;">
       <input type="checkbox" id="chkMostrarArchivados" ${verArchivados?'checked':''} onchange="toggleMostrarArchivados()">
       Mostrar jugadores archivados
     </label>
     <table>
-      <thead><tr><th>Jugador</th><th>Posición</th><th>Nacimiento</th><th>Pie</th><th>Altura</th><th>Peso</th><th></th></tr></thead>
-      <tbody>${filas || '<tr><td colspan="7">Sin jugadores cargados.</td></tr>'}</tbody>
+      <thead><tr>${editar?'<th></th>':''}<th>Jugador</th><th>Posición</th><th>Nacimiento</th><th>Edad</th><th>Pie</th><th>Altura</th><th>Peso</th><th></th></tr></thead>
+      <tbody>${filas || `<tr><td colspan="${columnas}">${Object.keys(datosCompletos).length ? 'Ningún jugador coincide con los filtros.' : 'Sin jugadores cargados.'}</td></tr>`}</tbody>
     </table>
+    ${editar && otrasCats.length ? `
+    <div class="fila-form" style="margin-top:10px;">
+      <label style="flex:none;">Pasar los marcados a</label>
+      <select id="paseDestino">${otrasCats.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}</select>
+      <button class="accion" onclick="pasarJugadores()" style="flex:none;">Pasar de categoría</button>
+    </div>`:''}
   </div>`;
+}
+
+function cambiarFiltroPlantel(campo, valor){
+  (filtrosPlantel[categoriaActual] = filtrosPlantel[categoriaActual] || {})[campo] = valor;
+  renderVistaActual();
+}
+
+// Pase de categoría (ej. cambio de temporada): se mueve el jugador con el
+// mismo id y todos sus registros, en una sola escritura multi-ruta. Las
+// convocatorias quedan donde se jugó cada partido, con el nombre guardado
+// para que se sigan leyendo desde la categoría vieja.
+async function pasarJugadores(){
+  const origen = categoriaActual;
+  const destino = document.getElementById('paseDestino').value;
+  const ids = [...document.querySelectorAll('.chkPase:checked')].map(e=>e.value);
+  if(!ids.length){ alert('Marcá al menos un jugador.'); return; }
+  if(!puedeEditar(destino)){ alert('Tu rol no puede editar la categoría destino.'); return; }
+  if(!confirm(`¿Pasar ${ids.length} jugador(es) de ${nombreCategoria(origen)} a ${nombreCategoria(destino)}? Se mueven también sus datos médicos, contratos, préstamos, multimedia e informes.`)) return;
+  const leer = n => db.ref(n+'/'+origen).once('value').then(s=>s.val()||{});
+  const plantel = await leer('plantel');
+  const up = {};
+  ids.forEach(id=>{ up[`plantel/${destino}/${id}`] = plantel[id]; up[`plantel/${origen}/${id}`] = null; });
+  for(const nodo of NODOS_POR_JUGADOR){
+    Object.entries(await leer(nodo)).forEach(([rid, r])=>{
+      if(!ids.includes(r.jugadorId)) return;
+      up[`${nodo}/${destino}/${rid}`] = r;
+      up[`${nodo}/${origen}/${rid}`] = null;
+    });
+  }
+  Object.entries(await leer('convocatorias')).forEach(([fecha, conv])=> ids.forEach(id=>{
+    if(conv?.[id] && !conv[id].jugador) up[`convocatorias/${origen}/${fecha}/${id}/jugador`] = nombreCompleto(plantel[id]);
+  }));
+  db.ref().update(up);
 }
 
 function toggleMostrarArchivados(){
@@ -360,47 +863,102 @@ function fichaExtraHTML(id, j){
     <div style="display:flex;gap:28px;flex-wrap:wrap;">
       <div style="flex:1;min-width:280px;">
         <div class="subtitulo">Datos generales</div>
-        <div class="fila-form"><label>DNI</label><input id="fx_dni_${id}" value="${j.dni||''}" ${dis}></div>
+        <div class="fila-form"><label>Nombre</label><input id="fx_nombre_${id}" value="${esc(j.nombre)}" ${dis}></div>
+        <div class="fila-form"><label>Apellido</label><input id="fx_apellido_${id}" value="${esc(j.apellido)}" ${dis}></div>
+        <div class="fila-form"><label>Posición</label><select id="fx_pos_${id}" ${dis}>${CLUB.posiciones.map(p=>`<option value="${esc(p.codigo)}" ${j.posicion===p.codigo?'selected':''}>${esc(p.nombre)}</option>`).join('')}</select></div>
+        <div class="fila-form"><label>Fecha de nacimiento</label><input type="date" id="fx_fechaNac_${id}" value="${esc(j.fechaNacimiento)}" ${dis}></div>
+        <div class="fila-form"><label>Pie hábil</label><select id="fx_pie_${id}" ${dis}>${opcionesSelect(['Derecho', 'Izquierdo', 'Ambos'], j.pieHabil)}</select></div>
+        <div class="fila-form"><label>Altura (cm)</label><input type="number" id="fx_altura_${id}" value="${esc(j.altura)}" ${dis}></div>
+        <div class="fila-form"><label>Peso (kg)</label><input type="number" id="fx_peso_${id}" value="${esc(j.peso)}" ${dis}></div>
+        <div class="fila-form"><label>DNI</label><input id="fx_dni_${id}" value="${esc(j.dni)}" ${dis}></div>
         <div class="fila-form"><label>Posición secundaria</label><select id="fx_posSec_${id}" ${dis}><option value="">—</option>${opcionesPosSec}</select></div>
-        <div class="fila-form"><label>Nacionalidad</label><input id="fx_nac_${id}" value="${j.nacionalidad||''}" ${dis}></div>
+        <div class="fila-form"><label>Nacionalidad</label><input id="fx_nac_${id}" value="${esc(j.nacionalidad)}" ${dis}></div>
         <div class="fila-form"><label>Pasaporte comunitario</label><select id="fx_pasaporte_${id}" ${dis}>${opcionPasaporte('')}${opcionPasaporte('No')}${opcionPasaporte('Si')}${opcionPasaporte('En Trámite')}</select></div>
-        <div class="fila-form"><label>Obra social</label><input id="fx_obraSocial_${id}" value="${j.obraSocial||''}" ${dis}></div>
-        <div class="fila-form"><label>Nro. afiliado</label><input id="fx_nroAfiliado_${id}" value="${j.nroAfiliado||''}" ${dis}></div>
-        <div class="fila-form"><label>Foto (URL)</label><input id="fx_foto_${id}" value="${j.foto||''}" ${dis}></div>
-        <div class="fila-form"><label>Video promocional</label><input id="fx_video_${id}" value="${j.videoPromocional||''}" ${dis}></div>
-        <div class="fila-form"><label>Perfil</label><input id="fx_perfil_${id}" value="${j.perfil||''}" ${dis}></div>
+        <div class="fila-form"><label>Obra social</label><input id="fx_obraSocial_${id}" value="${esc(j.obraSocial)}" ${dis}></div>
+        <div class="fila-form"><label>Nro. afiliado</label><input id="fx_nroAfiliado_${id}" value="${esc(j.nroAfiliado)}" ${dis}></div>
+        <div class="fila-form"><label>Foto (URL)</label><input id="fx_foto_${id}" value="${esc(j.foto)}" ${dis}></div>
+        <div class="fila-form"><label>Video promocional</label><input id="fx_video_${id}" value="${esc(j.videoPromocional)}" ${dis}></div>
+        <div class="fila-form"><label>Perfil</label><input id="fx_perfil_${id}" value="${esc(j.perfil)}" ${dis}></div>
         <div class="fila-form"><label>Valoración</label><select id="fx_valoracion_${id}" ${dis}>${VALORACIONES.map(opcionValoracion).join('')}</select></div>
-        <div class="fila-form"><label>Observaciones</label><textarea id="fx_obs_${id}" rows="2" ${dis}>${j.observaciones||''}</textarea></div>
+        <div class="fila-form"><label>Observaciones</label><textarea id="fx_obs_${id}" rows="2" ${dis}>${esc(j.observaciones)}</textarea></div>
         <div class="subtitulo">Estado</div>
         <div class="fila-form"><label>Archivado</label><input type="checkbox" id="fx_archivado_${id}" ${j.archivado?'checked':''} style="flex:none;" ${dis}></div>
-        <div class="fila-form"><label>Fecha liberado</label><input type="date" id="fx_fechaLiberado_${id}" value="${j.fechaLiberado||''}" ${dis}></div>
+        <div class="fila-form"><label>Fecha liberado</label><input type="date" id="fx_fechaLiberado_${id}" value="${esc(j.fechaLiberado)}" ${dis}></div>
       </div>
       <div style="flex:1;min-width:280px;">
         <div class="subtitulo">Contacto del jugador</div>
-        <div class="fila-form"><label>Email</label><input id="fx_email_${id}" value="${c.email||''}" ${dis}></div>
-        <div class="fila-form"><label>Teléfono</label><input id="fx_tel_${id}" value="${c.telefono||''}" ${dis}></div>
-        <div class="fila-form"><label>Domicilio</label><input id="fx_domicilio_${id}" value="${c.domicilio||''}" ${dis}></div>
+        <div class="fila-form"><label>Email</label><input id="fx_email_${id}" value="${esc(c.email)}" ${dis}></div>
+        <div class="fila-form"><label>Teléfono</label><input id="fx_tel_${id}" value="${esc(c.telefono)}" ${dis}></div>
+        <div class="fila-form"><label>Domicilio</label><input id="fx_domicilio_${id}" value="${esc(c.domicilio)}" ${dis}></div>
         <div class="subtitulo">Representante</div>
-        <div class="fila-form"><label>Nombre</label><input id="fx_repNombre_${id}" value="${rep.nombre||''}" ${dis}></div>
-        <div class="fila-form"><label>Email</label><input id="fx_repEmail_${id}" value="${rep.email||''}" ${dis}></div>
-        <div class="fila-form"><label>Teléfono</label><input id="fx_repTel_${id}" value="${rep.telefono||''}" ${dis}></div>
+        <div class="fila-form"><label>Nombre</label><input id="fx_repNombre_${id}" value="${esc(rep.nombre)}" ${dis}></div>
+        <div class="fila-form"><label>Email</label><input id="fx_repEmail_${id}" value="${esc(rep.email)}" ${dis}></div>
+        <div class="fila-form"><label>Teléfono</label><input id="fx_repTel_${id}" value="${esc(rep.telefono)}" ${dis}></div>
         <div class="subtitulo">Padre</div>
-        <div class="fila-form"><label>Nombre</label><input id="fx_padreNombre_${id}" value="${padre.nombre||''}" ${dis}></div>
-        <div class="fila-form"><label>Email</label><input id="fx_padreEmail_${id}" value="${padre.email||''}" ${dis}></div>
-        <div class="fila-form"><label>Teléfono</label><input id="fx_padreTel_${id}" value="${padre.telefono||''}" ${dis}></div>
+        <div class="fila-form"><label>Nombre</label><input id="fx_padreNombre_${id}" value="${esc(padre.nombre)}" ${dis}></div>
+        <div class="fila-form"><label>Email</label><input id="fx_padreEmail_${id}" value="${esc(padre.email)}" ${dis}></div>
+        <div class="fila-form"><label>Teléfono</label><input id="fx_padreTel_${id}" value="${esc(padre.telefono)}" ${dis}></div>
         <div class="subtitulo">Madre</div>
-        <div class="fila-form"><label>Nombre</label><input id="fx_madreNombre_${id}" value="${madre.nombre||''}" ${dis}></div>
-        <div class="fila-form"><label>Email</label><input id="fx_madreEmail_${id}" value="${madre.email||''}" ${dis}></div>
-        <div class="fila-form"><label>Teléfono</label><input id="fx_madreTel_${id}" value="${madre.telefono||''}" ${dis}></div>
+        <div class="fila-form"><label>Nombre</label><input id="fx_madreNombre_${id}" value="${esc(madre.nombre)}" ${dis}></div>
+        <div class="fila-form"><label>Email</label><input id="fx_madreEmail_${id}" value="${esc(madre.email)}" ${dis}></div>
+        <div class="fila-form"><label>Teléfono</label><input id="fx_madreTel_${id}" value="${esc(madre.telefono)}" ${dis}></div>
       </div>
     </div>
     ${puedeEditar()?`<button class="accion" onclick="guardarFicha('${id}')" style="margin-top:10px;">Guardar ficha</button>`:''}
+    <div class="subtitulo" style="margin-top:18px;">Partidos y estadísticas</div>
+    <div id="historial_${id}" class="nota">Cargando...</div>
   </div>`;
+}
+
+// Recorre las convocatorias de TODAS las categorías: un jugador que pasó de
+// categoría conserva su historial completo (el id no cambia con el pase).
+function cargarHistorialJugador(id){
+  Promise.all([db.ref('convocatorias').once('value'), db.ref('partidos').once('value')]).then(([sc, sp])=>{
+    const el = document.getElementById('historial_'+id);
+    if(el) el.innerHTML = historialJugadorHTML(id, sc.val()||{}, sp.val()||{});
+  });
+}
+
+function historialJugadorHTML(id, convs, partidos){
+  const filas = [], resumen = {};
+  Object.entries(convs).forEach(([cat, porFecha])=> Object.entries(porFecha||{}).forEach(([fecha, conv])=>{
+    const c = conv?.[id];
+    if(!c) return;
+    const p = partidos[cat]?.[fecha] || {};
+    filas.push({cat, fecha, p, c});
+    const k = nombreCategoria(cat) + ' — ' + (p.competencia || 'Sin competencia');
+    const x = resumen[k] || (resumen[k] = {conv:0, tit:0, min:0, goles:0, asist:0, ta:0, tr:0});
+    x.conv++; if(c.titular) x.tit++;
+    x.min += Number(c.minutos)||0; x.goles += Number(c.goles)||0; x.asist += Number(c.asistencias)||0;
+    if(c.amarilla) x.ta++; if(c.roja) x.tr++;
+  }));
+  if(!filas.length) return 'Todavía no figura en ninguna convocatoria.';
+  filas.sort((a,b)=> a.cat.localeCompare(b.cat) || (+a.fecha) - (+b.fecha));
+  return `
+    <table>
+      <thead><tr><th>Categoría / competencia</th><th>Conv.</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
+      <tbody>${Object.entries(resumen).map(([k,x])=>`<tr><td>${esc(k)}</td><td>${x.conv}</td><td>${x.tit}</td><td>${x.min}</td><td>${x.goles}</td><td>${x.asist}</td><td>${x.ta}</td><td>${x.tr}</td></tr>`).join('')}</tbody>
+    </table>
+    <table>
+      <thead><tr><th>Categoría</th><th>Fecha</th><th>Rival</th><th>Resultado</th><th>Titular</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th></tr></thead>
+      <tbody>${filas.map(({cat, fecha, p, c})=>`<tr>
+        <td>${esc(nombreCategoria(cat))}</td><td>${fecha}${p.fechaPartido ? ' ('+esc(fechaCorta(p.fechaPartido))+')' : ''}</td><td>${esc(p.rival)}</td>
+        <td>${p.golesFavor ?? ''} - ${p.golesContra ?? ''} ${badge(desenlace(p))}</td><td>${c.titular?'Sí':''}</td><td>${c.minutos ?? ''}</td>
+        <td>${c.goles||''}</td><td>${c.asistencias||''}</td><td>${c.amarilla?'Sí':''}</td><td>${c.roja?'Sí':''}</td></tr>`).join('')}</tbody>
+    </table>`;
 }
 
 function guardarFicha(id){
   const v = suf => document.getElementById('fx_'+suf+'_'+id).value.trim();
+  if(!v('nombre') || !v('apellido')){ alert('Nombre y apellido no pueden quedar vacíos.'); return; }
   db.ref('plantel/'+categoriaActual+'/'+id).update({
+    nombre: v('nombre'),
+    apellido: v('apellido'),
+    posicion: v('pos'),
+    fechaNacimiento: v('fechaNac'),
+    pieHabil: v('pie'),
+    altura: v('altura'),
+    peso: v('peso'),
     dni: v('dni'),
     posicionSecundaria: v('posSec'),
     nacionalidad: v('nac'),
@@ -458,54 +1016,108 @@ function borrarJugador(id){
   db.ref('plantel/'+categoriaActual+'/'+id).remove();
 }
 
-// ---------- Lesiones ----------
+// ---------- Datos médicos (consultas y lesiones) ----------
+// Registros viejos sin tipoConsulta se toman como 'Médica' (eran solo lesiones).
+const esLesion = l => (l.tipoConsulta || 'Médica') === 'Médica';
+const lesionActiva = l => esLesion(l) && !l.fechaRecuperacion;
+function diasEntre(desde, hasta){
+  if(!desde) return null;
+  const d1 = new Date(desde+'T00:00:00'), d2 = hasta ? new Date(hasta+'T00:00:00') : new Date();
+  return Math.round((d2-d1)/86400000);
+}
+function opcionesSelect(lista, valor){
+  return ['', ...lista].map(o=>`<option value="${esc(o)}" ${o===(valor||'')?'selected':''}>${esc(o)||'—'}</option>`).join('');
+}
+
 function lesionesHTML(plantel, lesiones){
   const jugadoresIds = idsJugadoresActivos(plantel);
-  const nombreJugador = jid => plantel[jid] ? `${plantel[jid].apellido}, ${plantel[jid].nombre}` : '(jugador no encontrado)';
-  const opcionesJugador = jugadoresIds.map(id=>`<option value="${id}">${nombreJugador(id)}</option>`).join('');
-  const filas = Object.entries(lesiones).map(([id,l])=>`
-    <tr>
-      <td>${nombreJugador(l.jugadorId)}</td>
-      <td>${l.fechaInicio||''}</td>
-      <td>${l.diagnostico||''}</td>
-      <td>${l.tipoLesion||''}</td>
-      <td>${l.localizacion||''}</td>
-      <td>${l.observaciones||''}</td>
-      <td>${l.fechaEstimadaRecuperacion||''}</td>
-      ${puedeEditar()?`<td><button class="peligro" onclick="borrarLesion('${id}')">Borrar</button></td>`:''}
-    </tr>`).join('');
+  const nombreJugador = jid => plantel[jid] ? nombreCompleto(plantel[jid]) : '(jugador no encontrado)';
+  const opcionesJugador = jugadoresIds.map(id=>`<option value="${id}">${esc(nombreJugador(id))}</option>`).join('');
+  const editar = puedeEditar();
+  const cat = categoriaActual;
+  const filas = Object.entries(lesiones)
+    .sort((a,b)=> (b[1].fechaInicio||'').localeCompare(a[1].fechaInicio||''))
+    .map(([id,l])=>{
+      const lesion = esLesion(l);
+      const dias = lesion ? diasEntre(l.fechaInicio, l.fechaRecuperacion) : null;
+      const desvio = (l.fechaRecuperacion && l.fechaEstimadaRecuperacion) ? diasEntre(l.fechaEstimadaRecuperacion, l.fechaRecuperacion) : null;
+      const detalle = [l.tipoLesion, l.causa, l.mecanismo, l.registro, l.tratamientoInicial,
+        l.reincidencia ? 'Reincidencia: '+l.reincidencia : ''].filter(Boolean).map(esc).join(' · ');
+      const ruta = `lesiones/${cat}/${id}`;
+      return `
+    <tr${lesionActiva(l)?' style="background:#2a1416;"':''}>
+      <td>${esc(nombreJugador(l.jugadorId))}</td>
+      <td>${esc(fechaCorta(l.fechaInicio))}</td>
+      <td>${esc(l.tipoConsulta || 'Médica')}</td>
+      <td>${esc(l.diagnostico)}${detalle?`<div style="font-size:.76rem;color:#9aa4bd;">${detalle}</div>`:''}</td>
+      <td>${esc(l.localizacion)}</td>
+      <td>${esc(l.severidad)}</td>
+      <td>${esc(fechaCorta(l.fechaEstimadaRecuperacion))}</td>
+      <td>${lesion ? (editar ? `<input type="date" value="${esc(l.fechaRecuperacion)}" onchange="db.ref('${ruta}/fechaRecuperacion').set(this.value||null)">` : esc(fechaCorta(l.fechaRecuperacion))) : ''}</td>
+      <td>${dias ?? ''}${desvio ? ` <span style="color:#9aa4bd;font-size:.78rem;">(${desvio>0?'+':''}${desvio} vs. estimada)</span>` : ''}</td>
+      <td>${lesion ? (editar ? `<select onchange="db.ref('${ruta}/estadoTratamiento').set(this.value||null)">${opcionesSelect(ESTADOS_TRATAMIENTO, l.estadoTratamiento)}</select>` : esc(l.estadoTratamiento)) : ''}</td>
+      <td>${l.link?`<a href="${url(l.link)}" target="_blank">Abrir</a>`:''}</td>
+      <td>${esc(l.observaciones)}</td>
+      ${editar?`<td><button class="peligro" onclick="borrarLesion('${id}')">Borrar</button></td>`:''}
+    </tr>`;
+    }).join('');
+  const sel = (id, lista, ph) => `<select id="${id}" title="${ph}">${['', ...lista].map(o=>`<option value="${esc(o)}">${o ? esc(o) : ph}</option>`).join('')}</select>`;
   return `
   <div class="card">
-    <h2>Lesiones</h2>
-    ${puedeEditar() && jugadoresIds.length ? `
+    <h2>Datos médicos y lesiones</h2>
+    ${editar && jugadoresIds.length ? `
     <div class="fila-form">
       <select id="lJugador">${opcionesJugador}</select>
-      <input id="lFechaInicio" type="date" title="Desde">
-      <input id="lDiagnostico" placeholder="Lesión (diagnóstico)">
-      <input id="lTipo" placeholder="Tipo (ej. muscular)">
-      <input id="lLocalizacion" placeholder="Localización (ej. tobillo)">
+      <input id="lFechaInicio" type="date" title="Fecha de la consulta / inicio de la lesión">
+      <select id="lTipoConsulta" onchange="document.getElementById('lCamposLesion').classList.toggle('oculto', this.value!=='Médica')">${TIPOS_CONSULTA.map(t=>`<option>${t}</option>`).join('')}</select>
+      <input id="lLink" placeholder="Link del informe">
       <input id="lObs" placeholder="Observaciones">
-      <input id="lFechaRecup" type="date" title="Fecha estimada de recuperación">
-      <button class="accion" onclick="agregarLesion()">Agregar</button>
-    </div>`:''}
+    </div>
+    <div id="lCamposLesion">
+      <div class="fila-form">
+        ${sel('lDiagnostico', LESION.diagnostico, 'Lesión')}
+        ${sel('lTipo', LESION.tipoLesion, 'Tipo de lesión')}
+        ${sel('lLocalizacion', LESION.localizacion, 'Localización')}
+        ${sel('lSeveridad', LESION.severidad, 'Severidad')}
+        ${sel('lMecanismo', LESION.mecanismo, 'Mecanismo')}
+      </div>
+      <div class="fila-form">
+        ${sel('lRegistro', LESION.registro, 'Registro de la lesión')}
+        ${sel('lCausa', LESION.causa, 'Causa')}
+        ${sel('lTratamiento', LESION.tratamientoInicial, 'Tratamiento inicial')}
+        ${sel('lReincidencia', LESION.reincidencia, 'Reincidencia')}
+        <input id="lFechaRecup" type="date" title="Fecha estimada de recuperación">
+      </div>
+    </div>
+    <div class="fila-form"><button class="accion" onclick="agregarLesion()" style="flex:none;">Agregar</button></div>`:''}
+    <div style="overflow-x:auto;">
     <table>
-      <thead><tr><th>Jugador</th><th>Desde</th><th>Lesión</th><th>Tipo</th><th>Localización</th><th>Observaciones</th><th>F. estimada recup.</th>${puedeEditar()?'<th></th>':''}</tr></thead>
-      <tbody>${filas || '<tr><td colspan="8">Sin lesiones cargadas.</td></tr>'}</tbody>
+      <thead><tr><th>Jugador</th><th>Fecha</th><th>Tipo</th><th>Lesión</th><th>Localización</th><th>Severidad</th><th>F. estimada recup.</th><th>F. recuperación</th><th>Días de baja</th><th>Estado</th><th>Informe</th><th>Observaciones</th>${editar?'<th></th>':''}</tr></thead>
+      <tbody>${filas || '<tr><td colspan="13">Sin registros médicos cargados.</td></tr>'}</tbody>
     </table>
+    </div>
   </div>`;
 }
 
 function agregarLesion(){
+  const v = id => document.getElementById(id).value.trim();
+  const tipoConsulta = v('lTipoConsulta');
   const l = {
-    jugadorId: document.getElementById('lJugador').value,
-    fechaInicio: document.getElementById('lFechaInicio').value,
-    diagnostico: document.getElementById('lDiagnostico').value.trim(),
-    tipoLesion: document.getElementById('lTipo').value.trim(),
-    localizacion: document.getElementById('lLocalizacion').value.trim(),
-    observaciones: document.getElementById('lObs').value.trim(),
-    fechaEstimadaRecuperacion: document.getElementById('lFechaRecup').value
+    jugadorId: v('lJugador'),
+    fechaInicio: v('lFechaInicio'),
+    tipoConsulta,
+    link: v('lLink'),
+    observaciones: v('lObs'),
   };
-  if(!l.jugadorId) return;
+  if(!l.jugadorId || !l.fechaInicio) return;
+  if(tipoConsulta === 'Médica'){
+    Object.assign(l, {
+      diagnostico: v('lDiagnostico'), tipoLesion: v('lTipo'), localizacion: v('lLocalizacion'),
+      severidad: v('lSeveridad'), mecanismo: v('lMecanismo'), registro: v('lRegistro'), causa: v('lCausa'),
+      tratamientoInicial: v('lTratamiento'), reincidencia: v('lReincidencia'),
+      fechaEstimadaRecuperacion: v('lFechaRecup'), estadoTratamiento: 'En tratamiento',
+    });
+  }
   db.ref('lesiones/'+categoriaActual).push(l);
 }
 
@@ -517,7 +1129,7 @@ function borrarLesion(id){
 // ---------- Contratos ----------
 function contratosHTML(plantel, contratos){
   const jugadoresIds = idsJugadoresActivos(plantel);
-  const nombreJugador = jid => plantel[jid] ? `${plantel[jid].apellido}, ${plantel[jid].nombre}` : '(jugador no encontrado)';
+  const nombreJugador = jid => plantel[jid] ? `${esc(plantel[jid].apellido)}, ${esc(plantel[jid].nombre)}` : '(jugador no encontrado)';
   const opcionesJugador = jugadoresIds.map(id=>`<option value="${id}">${nombreJugador(id)}</option>`).join('');
   const hoy = new Date();
   const filas = Object.entries(contratos).map(([id,c])=>{
@@ -529,9 +1141,11 @@ function contratosHTML(plantel, contratos){
     return `
     <tr>
       <td>${nombreJugador(c.jugadorId)}</td>
-      <td>${c.fechaInicio||''}</td>
-      <td>${c.fechaFin||''}</td>
+      <td>${esc(c.fechaInicio)}</td>
+      <td>${esc(c.fechaFin)}</td>
       <td>${meses}</td>
+      <td>${esc(c.observaciones)}</td>
+      <td>${c.link?`<a href="${url(c.link)}" target="_blank">Abrir</a>`:''}</td>
       ${puedeEditar()?`<td><button class="peligro" onclick="borrarContrato('${id}')">Borrar</button></td>`:''}
     </tr>`;
   }).join('');
@@ -543,11 +1157,13 @@ function contratosHTML(plantel, contratos){
       <select id="cJugador">${opcionesJugador}</select>
       <input id="cFechaInicio" type="date" title="Fecha de inicio de contrato">
       <input id="cFechaFin" type="date" title="Fecha de fin de contrato">
+      <input id="cObs" placeholder="Observaciones">
+      <input id="cLink" placeholder="Link del contrato">
       <button class="accion" onclick="agregarContrato()">Agregar</button>
     </div>`:''}
     <table>
-      <thead><tr><th>Jugador</th><th>Fecha inicio</th><th>Fecha fin</th><th>Meses restantes</th>${puedeEditar()?'<th></th>':''}</tr></thead>
-      <tbody>${filas || '<tr><td colspan="5">Sin contratos cargados.</td></tr>'}</tbody>
+      <thead><tr><th>Jugador</th><th>Fecha inicio</th><th>Fecha fin</th><th>Meses restantes</th><th>Observaciones</th><th>Link</th>${puedeEditar()?'<th></th>':''}</tr></thead>
+      <tbody>${filas || '<tr><td colspan="7">Sin contratos cargados.</td></tr>'}</tbody>
     </table>
   </div>`;
 }
@@ -557,6 +1173,8 @@ function agregarContrato(){
     jugadorId: document.getElementById('cJugador').value,
     fechaInicio: document.getElementById('cFechaInicio').value,
     fechaFin: document.getElementById('cFechaFin').value,
+    observaciones: document.getElementById('cObs').value.trim(),
+    link: document.getElementById('cLink').value.trim(),
   };
   if(!c.jugadorId || !c.fechaFin) return;
   db.ref('contratos/'+categoriaActual).push(c);
@@ -570,18 +1188,23 @@ function borrarContrato(id){
 // ---------- Préstamos / Convocatorias a selección ----------
 function prestamosHTML(plantel, prestamos){
   const jugadoresIds = idsJugadoresActivos(plantel);
-  const nombreJugador = jid => plantel[jid] ? `${plantel[jid].apellido}, ${plantel[jid].nombre}` : '(jugador no encontrado)';
+  const nombreJugador = jid => plantel[jid] ? `${esc(plantel[jid].apellido)}, ${esc(plantel[jid].nombre)}` : '(jugador no encontrado)';
   const opcionesJugador = jugadoresIds.map(id=>`<option value="${id}">${nombreJugador(id)}</option>`).join('');
+  const abierto = notasPrestamoAbierto[categoriaActual];
   const filas = Object.entries(prestamos).map(([id,p])=>`
     <tr>
       <td>${nombreJugador(p.jugadorId)}</td>
-      <td>${p.tipo||''}</td>
-      <td>${p.clubOSeleccion||''}</td>
-      <td>${p.fechaInicio||''}</td>
-      <td>${p.fechaFin||''}</td>
-      <td>${p.observaciones||''}</td>
-      ${puedeEditar()?`<td><button class="peligro" onclick="borrarPrestamo('${id}')">Borrar</button></td>`:''}
-    </tr>`).join('');
+      <td>${esc(p.tipo)}</td>
+      <td>${esc(p.clubOSeleccion)}</td>
+      <td>${esc(p.fechaInicio)}</td>
+      <td>${esc(p.fechaFin)}</td>
+      <td>${esc(p.observaciones)}</td>
+      <td>${p.link?`<a href="${url(p.link)}" target="_blank">Abrir</a>`:''}</td>
+      <td>
+        <button class="secundario" onclick="toggleNotasPrestamo('${id}')">${abierto===id?'Cerrar':'Notas'} (${Object.keys(p.notas||{}).length})</button>
+        ${puedeEditar()?`<button class="peligro" onclick="borrarPrestamo('${id}')">Borrar</button>`:''}
+      </td>
+    </tr>${abierto===id?`<tr><td colspan="8">${notasPrestamoHTML(id, p.notas||{})}</td></tr>`:''}`).join('');
   return `
   <div class="card">
     <h2>Préstamos / Convocatorias a selección</h2>
@@ -592,12 +1215,13 @@ function prestamosHTML(plantel, prestamos){
       <input id="prClub" placeholder="Club / selección">
       <input id="prFechaInicio" type="date" title="Fecha inicio">
       <input id="prFechaFin" type="date" title="Fecha fin">
-      <input id="prObs" placeholder="Observaciones">
+      <input id="prObs" placeholder="Observaciones / condición">
+      <input id="prLink" placeholder="Link del informe">
       <button class="accion" onclick="agregarPrestamo()">Agregar</button>
     </div>`:''}
     <table>
-      <thead><tr><th>Jugador</th><th>Tipo</th><th>Club / selección</th><th>Desde</th><th>Hasta</th><th>Observaciones</th>${puedeEditar()?'<th></th>':''}</tr></thead>
-      <tbody>${filas || '<tr><td colspan="7">Sin préstamos ni convocatorias cargadas.</td></tr>'}</tbody>
+      <thead><tr><th>Jugador</th><th>Tipo</th><th>Club / selección</th><th>Desde</th><th>Hasta</th><th>Observaciones</th><th>Informe</th><th></th></tr></thead>
+      <tbody>${filas || '<tr><td colspan="8">Sin préstamos ni convocatorias cargadas.</td></tr>'}</tbody>
     </table>
   </div>`;
 }
@@ -610,9 +1234,58 @@ function agregarPrestamo(){
     fechaInicio: document.getElementById('prFechaInicio').value,
     fechaFin: document.getElementById('prFechaFin').value,
     observaciones: document.getElementById('prObs').value.trim(),
+    link: document.getElementById('prLink').value.trim(),
   };
   if(!p.jugadorId) return;
   db.ref('prestamos/'+categoriaActual).push(p);
+}
+
+// Notas de seguimiento de un jugador a préstamo (visitas, informes del club destino).
+function notasPrestamoHTML(prestamoId, notas){
+  const filas = Object.entries(notas)
+    .sort((a,b)=> (b[1].fecha||'').localeCompare(a[1].fecha||''))
+    .map(([nid,n])=>`
+    <tr>
+      <td>${esc(fechaCorta(n.fecha))}</td>
+      <td>${esc(n.titulo)}</td>
+      <td>${esc(n.observaciones)}</td>
+      <td>${n.url?`<a href="${url(n.url)}" target="_blank">Abrir</a>`:''}</td>
+      ${puedeEditar()?`<td><button class="peligro" onclick="borrarNotaPrestamo('${prestamoId}','${nid}')">Borrar</button></td>`:''}
+    </tr>`).join('');
+  return `
+  <div class="panel-anidado">
+    <div class="subtitulo">Notas de seguimiento</div>
+    ${puedeEditar()?`
+    <div class="fila-form">
+      <input id="npFecha" type="date">
+      <input id="npTitulo" placeholder="Título">
+      <input id="npObs" placeholder="Observaciones">
+      <input id="npUrl" placeholder="URL">
+      <button class="accion" onclick="agregarNotaPrestamo('${prestamoId}')">Agregar nota</button>
+    </div>`:''}
+    <table>
+      <thead><tr><th>Fecha</th><th>Título</th><th>Observaciones</th><th>URL</th>${puedeEditar()?'<th></th>':''}</tr></thead>
+      <tbody>${filas || '<tr><td colspan="5">Sin notas.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+function toggleNotasPrestamo(id){
+  notasPrestamoAbierto[categoriaActual] = notasPrestamoAbierto[categoriaActual] === id ? null : id;
+  renderVistaActual();
+}
+function agregarNotaPrestamo(prestamoId){
+  const n = {
+    fecha: document.getElementById('npFecha').value,
+    titulo: document.getElementById('npTitulo').value.trim(),
+    observaciones: document.getElementById('npObs').value.trim(),
+    url: document.getElementById('npUrl').value.trim(),
+  };
+  if(!n.titulo && !n.observaciones) return;
+  db.ref(`prestamos/${categoriaActual}/${prestamoId}/notas`).push(n);
+}
+function borrarNotaPrestamo(prestamoId, notaId){
+  if(!confirm('¿Borrar nota?')) return;
+  db.ref(`prestamos/${categoriaActual}/${prestamoId}/notas/${notaId}`).remove();
 }
 
 function borrarPrestamo(id){
@@ -623,15 +1296,15 @@ function borrarPrestamo(id){
 // ---------- Multimedia (clips individuales por jugador) ----------
 function multimediaHTML(plantel, multimedia){
   const jugadoresIds = idsJugadoresActivos(plantel);
-  const nombreJugador = jid => plantel[jid] ? `${plantel[jid].apellido}, ${plantel[jid].nombre}` : '(jugador no encontrado)';
+  const nombreJugador = jid => plantel[jid] ? `${esc(plantel[jid].apellido)}, ${esc(plantel[jid].nombre)}` : '(jugador no encontrado)';
   const opcionesJugador = jugadoresIds.map(id=>`<option value="${id}">${nombreJugador(id)}</option>`).join('');
   const filas = Object.entries(multimedia).map(([id,m])=>`
     <tr>
       <td>${nombreJugador(m.jugadorId)}</td>
-      <td>${m.fecha||''}</td>
-      <td>${m.descripcion||''}</td>
-      <td>${m.link?`<a href="${m.link}" target="_blank">Abrir</a>`:''}</td>
-      <td>${m.observaciones||''}</td>
+      <td>${esc(m.fecha)}</td>
+      <td>${esc(m.descripcion)}</td>
+      <td>${m.link?`<a href="${url(m.link)}" target="_blank">Abrir</a>`:''}</td>
+      <td>${esc(m.observaciones)}</td>
       ${puedeEditar()?`<td><button class="peligro" onclick="borrarMultimedia('${id}')">Borrar</button></td>`:''}
     </tr>`).join('');
   return `
@@ -670,6 +1343,59 @@ function borrarMultimedia(id){
   db.ref('multimedia/'+categoriaActual+'/'+id).remove();
 }
 
+// ---------- Informes por jugador (trimestral / final / captación) ----------
+function informesHTML(plantel, informes){
+  const jugadoresIds = idsJugadoresActivos(plantel);
+  const nombreJugador = jid => plantel[jid] ? nombreCompleto(plantel[jid]) : '(jugador no encontrado)';
+  const opcionesJugador = jugadoresIds.map(id=>`<option value="${id}">${esc(nombreJugador(id))}</option>`).join('');
+  const filas = Object.entries(informes)
+    .sort((a,b)=> (b[1].fecha||'').localeCompare(a[1].fecha||''))
+    .map(([id,i])=>`
+    <tr>
+      <td>${esc(nombreJugador(i.jugadorId))}</td>
+      <td>${esc(fechaCorta(i.fecha))}</td>
+      <td>${esc(i.tipo)}</td>
+      <td>${esc(i.periodo)}</td>
+      <td>${esc(i.observaciones)}</td>
+      <td>${i.url?`<a href="${url(i.url)}" target="_blank">Abrir</a>`:''}</td>
+      ${puedeEditar()?`<td><button class="peligro" onclick="borrarInforme('${id}')">Borrar</button></td>`:''}
+    </tr>`).join('');
+  return `
+  <div class="card">
+    <h2>Informes</h2>
+    ${puedeEditar() && jugadoresIds.length ? `
+    <div class="fila-form">
+      <select id="infJugador">${opcionesJugador}</select>
+      <input id="infFecha" type="date">
+      <select id="infTipo">${TIPOS_INFORME.map(t=>`<option>${t}</option>`).join('')}</select>
+      <input id="infPeriodo" placeholder="Período (ej. 1er trimestre)">
+      <input id="infObs" placeholder="Observaciones">
+      <input id="infUrl" placeholder="URL">
+      <button class="accion" onclick="agregarInforme()">Agregar</button>
+    </div>`:''}
+    <table>
+      <thead><tr><th>Jugador</th><th>Fecha</th><th>Tipo</th><th>Período</th><th>Observaciones</th><th>URL</th>${puedeEditar()?'<th></th>':''}</tr></thead>
+      <tbody>${filas || '<tr><td colspan="7">Sin informes cargados.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+function agregarInforme(){
+  const i = {
+    jugadorId: document.getElementById('infJugador').value,
+    fecha: document.getElementById('infFecha').value,
+    tipo: document.getElementById('infTipo').value,
+    periodo: document.getElementById('infPeriodo').value.trim(),
+    observaciones: document.getElementById('infObs').value.trim(),
+    url: document.getElementById('infUrl').value.trim(),
+  };
+  if(!i.jugadorId) return;
+  db.ref('informes/'+categoriaActual).push(i);
+}
+function borrarInforme(id){
+  if(!confirm('¿Borrar informe?')) return;
+  db.ref('informes/'+categoriaActual+'/'+id).remove();
+}
+
 // ---------- Partidos / Resultados ----------
 let _refsPartidos = [];
 function renderPartidos(){
@@ -696,16 +1422,17 @@ function partidosHTML(cat, datos, plantel, convocatoria){
       const detalleAbierta = detalleAbiertoFecha[cat] === fecha;
       const convocatoriaAbierta = convocatoriaAbiertaFecha[cat] === fecha;
       let extra = '';
-      if(detalleAbierta) extra += `<tr><td colspan="7">${partidoDetalleHTML(fecha,p)}</td></tr>`;
-      if(convocatoriaAbierta) extra += `<tr><td colspan="7">${convocatoriaHTML(cat, fecha, plantel, convocatoria)}</td></tr>`;
+      if(detalleAbierta) extra += `<tr><td colspan="8">${partidoDetalleHTML(fecha,p)}</td></tr>`;
+      if(convocatoriaAbierta) extra += `<tr><td colspan="8">${convocatoriaHTML(cat, fecha, plantel, convocatoria)}</td></tr>`;
       return `
       <tr>
         <td>${fecha}</td>
-        <td>${p.rival||''}</td>
-        <td>${p.localia||''}</td>
+        <td>${esc(fechaCorta(p.fechaPartido))}</td>
+        <td>${esc(p.rival)}</td>
+        <td>${esc(p.localia)}</td>
         <td>${p.golesFavor ?? ''} - ${p.golesContra ?? ''}</td>
-        <td>${p.resultado||''}</td>
-        <td>${p.competencia||''}</td>
+        <td>${esc(p.resultado)}</td>
+        <td>${esc(p.competencia)}</td>
         <td>
           <button class="secundario" onclick="toggleDetallePartido('${fecha}')">${detalleAbierta?'Cerrar':'Detalle'}</button>
           <button class="secundario" onclick="toggleConvocatoria('${fecha}')">${convocatoriaAbierta?'Cerrar':'Convocatoria'}</button>
@@ -719,6 +1446,7 @@ function partidosHTML(cat, datos, plantel, convocatoria){
     ${puedeEditar()?`
     <div class="fila-form">
       <input id="mFecha" type="number" placeholder="Fecha Nro">
+      <input id="mFechaPartido" type="date" title="Día del partido (opcional)">
       <input id="mRival" placeholder="Rival">
       <select id="mLocalia"><option value="Local">Local</option><option value="Visitante">Visitante</option></select>
       <input id="mGF" type="number" placeholder="Goles a favor">
@@ -727,8 +1455,8 @@ function partidosHTML(cat, datos, plantel, convocatoria){
       <button class="accion" onclick="agregarPartido()">Agregar</button>
     </div>`:''}
     <table>
-      <thead><tr><th>Fecha</th><th>Rival</th><th>Condición</th><th>Goles</th><th>Resultado</th><th>Competencia</th><th></th></tr></thead>
-      <tbody>${filas || '<tr><td colspan="7">Sin partidos cargados.</td></tr>'}</tbody>
+      <thead><tr><th>Fecha</th><th>Día</th><th>Rival</th><th>Condición</th><th>Goles</th><th>Resultado</th><th>Competencia</th><th></th></tr></thead>
+      <tbody>${filas || '<tr><td colspan="8">Sin partidos cargados.</td></tr>'}</tbody>
     </table>
   </div>`;
 }
@@ -743,6 +1471,10 @@ function agregarPartido(){
     golesContra: Number(document.getElementById('mGC').value || 0),
     resultado: document.getElementById('mResultado').value
   };
+  // Solo si se cargó: este formulario también sirve para corregir una fecha
+  // ya cargada y no debe borrar el día que se haya puesto en "Detalle".
+  const fechaPartido = document.getElementById('mFechaPartido').value;
+  if(fechaPartido) p.fechaPartido = fechaPartido;
   db.ref('partidos/'+categoriaActual+'/'+fecha).update(p);
 }
 
@@ -775,21 +1507,24 @@ function partidoDetalleHTML(fecha, p){
   const linksHtml = (CLUB.linksPartido || []).map(k=>`
     <div class="fila-form">
       <label>${ETIQUETAS_LINK[k] || k}</label>
-      <input id="pd_link_${k}_${fecha}" value="${links[k]||''}" placeholder="URL" ${dis}>
-      ${links[k] ? `<a href="${links[k]}" target="_blank" class="secundario" style="flex:none;text-decoration:none;padding:6px 10px;">Abrir</a>` : ''}
+      <input id="pd_link_${k}_${fecha}" value="${esc(links[k])}" placeholder="URL" ${dis}>
+      ${links[k] ? `<a href="${url(links[k])}" target="_blank" class="secundario" style="flex:none;text-decoration:none;padding:6px 10px;">Abrir</a>` : ''}
     </div>`).join('');
   return `
   <div class="panel-anidado">
     <div style="display:flex;gap:28px;flex-wrap:wrap;">
       <div style="flex:1;min-width:280px;">
         <div class="subtitulo">Datos del partido</div>
-        <div class="fila-form"><label>Competencia</label><input id="pd_competencia_${fecha}" value="${p.competencia||''}" ${dis}></div>
-        <div class="fila-form"><label>Sistema táctico</label><input id="pd_sistema_${fecha}" value="${p.sistemaTactico||''}" placeholder="ej. 1-4-3-3" ${dis}></div>
+        <div class="fila-form"><label>Día del partido</label><input type="date" id="pd_fechaPartido_${fecha}" value="${esc(p.fechaPartido)}" ${dis}></div>
+        <div class="fila-form"><label>Competencia</label><input id="pd_competencia_${fecha}" value="${esc(p.competencia)}" ${dis}></div>
+        <div class="fila-form"><label>Árbitro</label><input id="pd_arbitro_${fecha}" value="${esc(p.arbitro)}" ${dis}></div>
+        <div class="fila-form"><label>Sistema táctico</label><input id="pd_sistema_${fecha}" value="${esc(p.sistemaTactico)}" list="listaSistemas" placeholder="ej. 1-4-3-3" ${dis}></div>
+        <datalist id="listaSistemas">${SISTEMAS_TACTICOS.map(x=>`<option value="${x}">`).join('')}</datalist>
         <div class="fila-form"><label>Penales a favor</label><input type="number" id="pd_penF_${fecha}" value="${p.penalesFavor ?? ''}" ${dis}></div>
         <div class="fila-form"><label>Penales en contra</label><input type="number" id="pd_penC_${fecha}" value="${p.penalesContra ?? ''}" ${dis}></div>
-        <div class="fila-form"><label>Plan con tenencia</label><textarea id="pd_planCon_${fecha}" rows="2" ${dis}>${p.planConTenencia||''}</textarea></div>
-        <div class="fila-form"><label>Plan sin tenencia</label><textarea id="pd_planSin_${fecha}" rows="2" ${dis}>${p.planSinTenencia||''}</textarea></div>
-        <div class="fila-form"><label>Descripción</label><textarea id="pd_desc_${fecha}" rows="2" ${dis}>${p.descripcion||''}</textarea></div>
+        <div class="fila-form"><label>Plan con tenencia</label><textarea id="pd_planCon_${fecha}" rows="2" ${dis}>${esc(p.planConTenencia)}</textarea></div>
+        <div class="fila-form"><label>Plan sin tenencia</label><textarea id="pd_planSin_${fecha}" rows="2" ${dis}>${esc(p.planSinTenencia)}</textarea></div>
+        <div class="fila-form"><label>Descripción</label><textarea id="pd_desc_${fecha}" rows="2" ${dis}>${esc(p.descripcion)}</textarea></div>
       </div>
       <div style="flex:1;min-width:280px;">
         <div class="subtitulo">Links</div>
@@ -810,7 +1545,9 @@ function guardarDetallePartido(fecha){
   const penF = document.getElementById('pd_penF_'+fecha).value;
   const penC = document.getElementById('pd_penC_'+fecha).value;
   db.ref('partidos/'+categoriaActual+'/'+fecha).update({
+    fechaPartido: v('pd_fechaPartido_'+fecha),
     competencia: v('pd_competencia_'+fecha),
+    arbitro: v('pd_arbitro_'+fecha),
     sistemaTactico: v('pd_sistema_'+fecha),
     penalesFavor: penF === '' ? null : Number(penF),
     penalesContra: penC === '' ? null : Number(penC),
@@ -822,32 +1559,37 @@ function guardarDetallePartido(fecha){
 }
 
 // ---------- Convocatoria por partido ----------
+// Filas = jugadores activos del plantel + cualquiera que ya figure en esta
+// convocatoria aunque después se haya archivado o pasado de categoría (si no,
+// al re-guardar se borraría su línea de un partido que sí jugó).
 function convocatoriaHTML(cat, fecha, plantel, convocatoria){
-  const jugadoresIds = Object.keys(plantel);
-  if(jugadoresIds.length === 0){
+  const ids = [...new Set([...idsJugadoresActivos(plantel), ...Object.keys(convocatoria)])];
+  if(ids.length === 0){
     return `<div class="panel-anidado"><p>Cargá el plantel de esta categoría antes de armar la convocatoria.</p></div>`;
   }
+  const nombre = id => plantel[id] ? nombreCompleto(plantel[id]) : (convocatoria[id]?.jugador || '(fuera del plantel)');
+  ids.sort((a,b)=> nombre(a).localeCompare(nombre(b)));
   const dis = puedeEditar() ? '' : 'disabled';
-  const opcionesSustituto = seleccionado => jugadoresIds
-    .map(id=>`<option value="${id}" ${seleccionado===id?'selected':''}>${plantel[id].apellido}, ${plantel[id].nombre}</option>`).join('');
-  const filas = jugadoresIds
-    .sort((a,b)=> (plantel[a].apellido||'').localeCompare(plantel[b].apellido||''))
-    .map(id=>{
+  const opcionesSustituto = seleccionado => ids
+    .map(id=>`<option value="${id}" ${seleccionado===id?'selected':''}>${esc(nombre(id))}</option>`).join('');
+  const convocados = Object.keys(convocatoria).length;
+  const filas = ids.map(id=>{
       const c = convocatoria[id] || {};
       return `
       <tr>
-        <td>${plantel[id].apellido}, ${plantel[id].nombre}</td>
-        <td><input type="checkbox" id="cv_titular_${id}" ${c.titular?'checked':''} ${dis}></td>
+        <td>${esc(nombre(id))}${plantel[id] ? '' : ' <span class="tag-rol" style="background:var(--borde);">fuera del plantel</span>'}</td>
+        <td><input type="checkbox" id="cv_convocado_${id}" data-nombre="${esc(nombre(id))}" ${convocatoria[id]?'checked':''} ${dis}></td>
+        <td><input type="checkbox" id="cv_titular_${id}" ${c.titular?'checked':''} onchange="if(this.checked) document.getElementById('cv_convocado_${id}').checked=true" ${dis}></td>
         <td><input type="number" id="cv_dorsal_${id}" value="${c.dorsal ?? ''}" style="width:60px;" ${dis}></td>
         <td><input type="number" id="cv_minutos_${id}" value="${c.minutos ?? ''}" style="width:70px;" ${dis}></td>
         <td><input type="number" id="cv_goles_${id}" value="${c.goles ?? ''}" style="width:60px;" ${dis}></td>
         <td><input type="number" id="cv_asistencias_${id}" value="${c.asistencias ?? ''}" style="width:60px;" ${dis}></td>
         <td><input type="checkbox" id="cv_amarilla_${id}" ${c.amarilla?'checked':''} ${dis}></td>
         <td><input type="checkbox" id="cv_roja_${id}" ${c.roja?'checked':''} ${dis}></td>
-        <td><input type="date" id="cv_rojaFecha_${id}" value="${c.rojaFechaExpulsion||''}" style="width:130px;" ${dis}></td>
-        <td><input id="cv_rojaLink_${id}" value="${c.rojaLink||''}" placeholder="Link" style="width:100px;" ${dis}></td>
-        <td><input id="cv_rojaPdf_${id}" value="${c.rojaPdf||''}" placeholder="PDF" style="width:100px;" ${dis}></td>
-        <td><input id="cv_rojaObs_${id}" value="${c.rojaObservaciones||''}" placeholder="Obs." style="width:110px;" ${dis}></td>
+        <td><input type="date" id="cv_rojaFecha_${id}" value="${esc(c.rojaFechaExpulsion)}" style="width:130px;" ${dis}></td>
+        <td><input id="cv_rojaLink_${id}" value="${esc(c.rojaLink)}" placeholder="Link" style="width:100px;" ${dis}></td>
+        <td><input id="cv_rojaPdf_${id}" value="${esc(c.rojaPdf)}" placeholder="PDF" style="width:100px;" ${dis}></td>
+        <td><input id="cv_rojaObs_${id}" value="${esc(c.rojaObservaciones)}" placeholder="Obs." style="width:110px;" ${dis}></td>
         <td><select id="cv_sustituidoPor_${id}" ${dis}><option value="" ${!c.sustituidoPor?'selected':''}>—</option>${opcionesSustituto(c.sustituidoPor)}</select></td>
         <td><select id="cv_motivo_${id}" ${dis}>${MOTIVOS_CAMBIO.map(m=>`<option value="${m}" ${c.motivoCambio===m?'selected':''}>${m||'—'}</option>`).join('')}</select></td>
         <td><input type="checkbox" id="cv_destacado_${id}" ${c.destacado?'checked':''} ${dis}></td>
@@ -855,11 +1597,12 @@ function convocatoriaHTML(cat, fecha, plantel, convocatoria){
     }).join('');
   return `
   <div class="panel-anidado">
-    <div class="subtitulo">Convocatoria — Fecha ${fecha}</div>
+    <div class="subtitulo">Convocatoria — Fecha ${fecha} (${convocados} convocados)</div>
+    <p style="color:#9aa4bd;font-size:.82rem;margin:0 0 6px;">Solo se guardan los jugadores marcados como convocados (marcar Titular también lo marca).</p>
     <div style="overflow-x:auto;">
     <table>
       <thead><tr>
-        <th>Jugador</th><th>Titular</th><th>Dorsal</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th>
+        <th>Jugador</th><th>Conv.</th><th>Titular</th><th>Dorsal</th><th>Min.</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th>
         <th>F. expulsión</th><th>Link roja</th><th>PDF roja</th><th>Obs. roja</th>
         <th>Sustituido por</th><th>Motivo cambio</th><th>Destacado</th>
       </tr></thead>
@@ -895,18 +1638,18 @@ function exportarFichaJugador(id){
     if(!j) return;
     const c = j.contacto || {};
     const html = `
-    <h1>${CLUB.club.nombre} — Ficha de jugador</h1>
-    <p><strong>${j.apellido||''}, ${j.nombre||''}</strong> — ${nombrePosicion(j.posicion)}</p>
+    <h1>${esc(CLUB.club.nombre)} — Ficha de jugador</h1>
+    <p><strong>${esc(j.apellido)}, ${esc(j.nombre)}</strong> — ${nombrePosicion(j.posicion)}</p>
     <table>
-      <tr><th>DNI</th><td>${j.dni||''}</td><th>Nacimiento</th><td>${j.fechaNacimiento||''}</td></tr>
-      <tr><th>Pie hábil</th><td>${j.pieHabil||''}</td><th>Altura / Peso</th><td>${j.altura||''} cm / ${j.peso||''} kg</td></tr>
-      <tr><th>Nacionalidad</th><td>${j.nacionalidad||''}</td><th>Pasaporte comunitario</th><td>${j.pasaporteComunitario||''}</td></tr>
-      <tr><th>Obra social</th><td>${j.obraSocial||''}</td><th>Nro. afiliado</th><td>${j.nroAfiliado||''}</td></tr>
-      <tr><th>Perfil</th><td>${j.perfil||''}</td><th>Valoración</th><td>${j.valoracion||''}</td></tr>
-      <tr><th>Email</th><td>${c.email||''}</td><th>Teléfono</th><td>${c.telefono||''}</td></tr>
-      <tr><th>Domicilio</th><td colspan="3">${c.domicilio||''}</td></tr>
+      <tr><th>DNI</th><td>${esc(j.dni)}</td><th>Nacimiento</th><td>${esc(j.fechaNacimiento)}</td></tr>
+      <tr><th>Pie hábil</th><td>${esc(j.pieHabil)}</td><th>Altura / Peso</th><td>${esc(j.altura)} cm / ${esc(j.peso)} kg</td></tr>
+      <tr><th>Nacionalidad</th><td>${esc(j.nacionalidad)}</td><th>Pasaporte comunitario</th><td>${esc(j.pasaporteComunitario)}</td></tr>
+      <tr><th>Obra social</th><td>${esc(j.obraSocial)}</td><th>Nro. afiliado</th><td>${esc(j.nroAfiliado)}</td></tr>
+      <tr><th>Perfil</th><td>${esc(j.perfil)}</td><th>Valoración</th><td>${esc(j.valoracion)}</td></tr>
+      <tr><th>Email</th><td>${esc(c.email)}</td><th>Teléfono</th><td>${esc(c.telefono)}</td></tr>
+      <tr><th>Domicilio</th><td colspan="3">${esc(c.domicilio)}</td></tr>
     </table>
-    ${j.observaciones ? `<p><strong>Observaciones:</strong> ${j.observaciones}</p>` : ''}`;
+    ${j.observaciones ? `<p><strong>Observaciones:</strong> ${esc(j.observaciones)}</p>` : ''}`;
     abrirVentanaPDF('Ficha - '+(j.apellido||''), html);
   });
 }
@@ -922,16 +1665,15 @@ function exportarCitacionPDF(cat, fecha){
     const partido = spPartido.val() || {};
     const titulares = [], suplentes = [];
     Object.entries(conv).forEach(([id,c])=>{
-      const j = plantel[id];
-      if(!j) return;
-      const linea = `${c.dorsal ?? ''} — ${j.apellido}, ${j.nombre}`;
+      const nombreJ = plantel[id] ? nombreCompleto(plantel[id]) : (c.jugador || '');
+      const linea = `${c.dorsal ?? ''} — ${esc(nombreJ)}`;
       (c.titular ? titulares : suplentes).push(linea);
     });
     const firmas = lista => lista.map(l=>`<div class="firma-fila"><span>${l}</span><span>Firma</span></div>`).join('')
       || '<p style="color:#777;">(sin cargar)</p>';
     const html = `
-    <h1>${CLUB.club.nombre} — Citación</h1>
-    <p>Fecha <strong>${fecha}</strong> — Rival: <strong>${partido.rival||''}</strong> (${partido.localia||''})</p>
+    <h1>${esc(CLUB.club.nombre)} — Citación</h1>
+    <p>Fecha <strong>${fecha}</strong> — Rival: <strong>${esc(partido.rival)}</strong> (${esc(partido.localia)})</p>
     <h3>Titulares</h3>${firmas(titulares)}
     <h3>Suplentes</h3>${firmas(suplentes)}`;
     abrirVentanaPDF('Citación F'+fecha, html);
@@ -939,16 +1681,17 @@ function exportarCitacionPDF(cat, fecha){
 }
 
 function guardarConvocatoria(cat, fecha){
-  // Lee los ids de jugador directo del DOM ya renderizado (en vez de volver a
-  // pedir el plantel a Firebase): evita que un jugador agregado al plantel
-  // justo después de abrir esta convocatoria rompa el guardado buscando un
-  // input que todavía no existe.
+  // Lee los ids directo del DOM ya renderizado (no vuelve a pedir el plantel):
+  // un jugador agregado al plantel recién no rompe el guardado.
   const numeroOVacio = v => v === '' ? null : Number(v);
   const out = {};
-  document.querySelectorAll('[id^="cv_titular_"]').forEach(elTitular=>{
-    const id = elTitular.id.slice('cv_titular_'.length);
+  document.querySelectorAll('[id^="cv_convocado_"]').forEach(elConv=>{
+    const id = elConv.id.slice('cv_convocado_'.length);
+    const titular = document.getElementById('cv_titular_'+id).checked;
+    if(!elConv.checked && !titular) return;
     out[id] = {
-      titular: elTitular.checked,
+      jugador: elConv.dataset.nombre,
+      titular,
       dorsal: numeroOVacio(document.getElementById('cv_dorsal_'+id).value),
       minutos: numeroOVacio(document.getElementById('cv_minutos_'+id).value),
       goles: Number(document.getElementById('cv_goles_'+id).value || 0),
@@ -1011,7 +1754,7 @@ function tablaHTML(filas, adapter){
   const cuerpo = filas.map((f,i)=>`
     <tr>
       <td>${f.pos ?? i+1}</td>
-      <td>${f.equipo||''}</td>
+      <td>${esc(f.equipo)}</td>
       <td>${f.pj ?? ''}</td>
       <td>${f.pg ?? ''}</td>
       <td>${f.pe ?? ''}</td>
@@ -1100,10 +1843,10 @@ async function renderConfiabilidad(){
 function compararResultado(fecha, manual, liga){
   if(!liga || liga.resultado == null) return null; // la liga todavía no tiene el resultado, nada que comparar
   if(!manual || manual.golesFavor == null){
-    return `La liga ya tiene el resultado de la fecha ${fecha} (vs ${liga.rival}, ${liga.resultado}) pero no está cargado a mano.`;
+    return `La liga ya tiene el resultado de la fecha ${fecha} (vs ${esc(liga.rival)}, ${esc(liga.resultado)}) pero no está cargado a mano.`;
   }
   if(manual.golesFavor !== liga.golesFavor || manual.golesContra !== liga.golesContra){
-    return `Fecha ${fecha} vs ${liga.rival}: cargaste ${manual.golesFavor}-${manual.golesContra}, la liga dice ${liga.golesFavor}-${liga.golesContra}.`;
+    return `Fecha ${fecha} vs ${esc(liga.rival)}: cargaste ${manual.golesFavor}-${manual.golesContra}, la liga dice ${liga.golesFavor}-${liga.golesContra}.`;
   }
   return null;
 }
@@ -1176,13 +1919,13 @@ function confiabilidadHTML(cat, partidosManual, fixtureLiga, tablaLiga, omitidos
         <thead><tr><th></th><th>PJ</th><th>PG</th><th>PE</th><th>PP</th><th>GF</th><th>GC</th></tr></thead>
         <tbody>
           <tr><td>Carga manual</td><td>${propia.pj}</td><td>${propia.pg}</td><td>${propia.pe}</td><td>${propia.pp}</td><td>${propia.gf}</td><td>${propia.gc}</td></tr>
-          <tr><td>Liga (${filaLiga.equipo})</td><td>${filaLiga.pj}</td><td>${filaLiga.pg}</td><td>${filaLiga.pe}</td><td>${filaLiga.pp}</td><td>${filaLiga.gf}</td><td>${filaLiga.gc}</td></tr>
+          <tr><td>Liga (${esc(filaLiga.equipo)})</td><td>${filaLiga.pj}</td><td>${filaLiga.pg}</td><td>${filaLiga.pe}</td><td>${filaLiga.pp}</td><td>${filaLiga.gf}</td><td>${filaLiga.gc}</td></tr>
         </tbody>
       </table>`}
 
     <div class="subtitulo">Partidos jugados sin ningún link cargado</div>
     ${recordatorios.length ? `<ul>${recordatorios.map(r=>`
-      <li>Fecha ${r.fecha} vs ${r.rival||''} — sin links.
+      <li>Fecha ${r.fecha} vs ${esc(r.rival)} — sin links.
         ${puedeEditar() ? `<button class="secundario" onclick="omitirRecordatorio('${r.fecha}')">Omitir</button>` : ''}
       </li>`).join('')}</ul>` : '<p>Sin pendientes.</p>'}
   </div>`;
@@ -1211,12 +1954,12 @@ function documentosHTML(documentos){
     .sort((a,b)=> (b[1].fechaDesde||'').localeCompare(a[1].fechaDesde||''))
     .map(([id,d])=>`
     <tr>
-      <td>${d.tipo||''}</td>
-      <td>${d.titulo||''}</td>
-      <td>${d.microciclo||''}</td>
-      <td>${d.fechaDesde||''}${d.fechaHasta?' a '+d.fechaHasta:''}</td>
-      <td>${d.descripcion||''}</td>
-      <td>${d.url?`<a href="${d.url}" target="_blank">Abrir</a>`:''}</td>
+      <td>${esc(d.tipo)}</td>
+      <td>${esc(d.titulo)}</td>
+      <td>${esc(d.microciclo)}</td>
+      <td>${esc(d.fechaDesde)}${d.fechaHasta?' a '+d.fechaHasta:''}</td>
+      <td>${esc(d.descripcion)}</td>
+      <td>${d.url?`<a href="${url(d.url)}" target="_blank">Abrir</a>`:''}</td>
       ${puedeEditar()?`<td><button class="peligro" onclick="borrarDocumento('${id}')">Borrar</button></td>`:''}
     </tr>`).join('');
   return `
@@ -1260,16 +2003,17 @@ function borrarDocumento(id){
 }
 
 function entrenamientosHTML(entrenamientos){
+  const otrasCatsEditables = CLUB.temporada.categorias.filter(c=> c.id!==categoriaActual && puedeEditar(c.id));
   const filas = Object.entries(entrenamientos)
     .sort((a,b)=> (b[1].fecha||'').localeCompare(a[1].fecha||''))
     .map(([id,e])=>`
     <tr>
-      <td>${e.fecha||''}</td>
-      <td>${e.descripcion||''}</td>
-      <td>${e.etiquetas||''}</td>
-      <td>${e.linkCampo?`<a href="${e.linkCampo}" target="_blank">Campo</a>`:''}</td>
-      <td>${e.linkArqueros?`<a href="${e.linkArqueros}" target="_blank">Arqueros</a>`:''}</td>
-      <td>${e.urlPlanificacion?`<a href="${e.urlPlanificacion}" target="_blank">Planificación</a>`:''}</td>
+      <td>${esc(e.fecha)}</td>
+      <td>${esc(e.descripcion)}</td>
+      <td>${esc(e.etiquetas)}</td>
+      <td>${e.linkCampo?`<a href="${url(e.linkCampo)}" target="_blank">Campo</a>`:''}</td>
+      <td>${e.linkArqueros?`<a href="${url(e.linkArqueros)}" target="_blank">Arqueros</a>`:''}</td>
+      <td>${e.urlPlanificacion?`<a href="${url(e.urlPlanificacion)}" target="_blank">Planificación</a>`:''}</td>
       ${puedeEditar()?`<td><button class="peligro" onclick="borrarEntrenamiento('${id}')">Borrar</button></td>`:''}
     </tr>`).join('');
   return `
@@ -1284,7 +2028,10 @@ function entrenamientosHTML(entrenamientos){
       <input id="entLinkArqueros" placeholder="Link entrenamiento de arqueros">
       <input id="entUrlPlanificacion" placeholder="Url planificación">
       <button class="accion" onclick="agregarEntrenamiento()">Agregar</button>
-    </div>`:''}
+    </div>
+    ${otrasCatsEditables.length ? `<div class="fila-form nota"><span style="flex:none;">Cargarlo también en:</span>
+      ${otrasCatsEditables.map(c=>`<label style="flex:none;display:inline-flex;gap:4px;align-items:center;"><input type="checkbox" class="chkEntCat" value="${c.id}">${esc(c.nombre)}</label>`).join('')}
+    </div>` : ''}`:''}
     <table>
       <thead><tr><th>Fecha</th><th>Descripción</th><th>Etiquetas</th><th>Campo</th><th>Arqueros</th><th>Planificación</th>${puedeEditar()?'<th></th>':''}</tr></thead>
       <tbody>${filas || '<tr><td colspan="7">Sin entrenamientos cargados.</td></tr>'}</tbody>
@@ -1302,7 +2049,8 @@ function agregarEntrenamiento(){
     urlPlanificacion: document.getElementById('entUrlPlanificacion').value.trim(),
   };
   if(!e.fecha) return;
-  db.ref('entrenamientos/'+categoriaActual).push(e);
+  const cats = [categoriaActual, ...[...document.querySelectorAll('.chkEntCat:checked')].map(x=>x.value)];
+  cats.forEach(c=> db.ref('entrenamientos/'+c).push(e));
 }
 
 function borrarEntrenamiento(id){

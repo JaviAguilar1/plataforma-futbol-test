@@ -22,6 +22,10 @@
       ".read": true,
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
     },
+    "informes": {
+      ".read": true,
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
+    },
     "multimedia": {
       ".read": true,
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() !== null"
