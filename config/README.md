@@ -4,6 +4,14 @@ Copiá `club.example.json` a `club.json` y completá:
 
 - **club**: nombre, escudo (URL) y colores (variables CSS de la app: fondo,
   superficie de tarjetas, color primario/acento, color de texto).
+- **temporada.anio**: temporada con la que arranca la instancia. Solo se usa
+  mientras la base no tenga `temporadasInfo/activa`; de ahí en adelante la
+  temporada activa la cambia el admin desde Inicio ("Iniciar temporada
+  nueva"). Partidos, convocatorias, tabla, recordatorios, entrenamientos y
+  documentos se guardan por año (`temporadas/<año>/...`) y las temporadas
+  anteriores se consultan con el selector de arriba; el plantel y lo del
+  jugador (datos médicos, contratos, préstamos, multimedia, informes) es del
+  club y no depende del año.
 - **temporada.categorias**: una entrada por categoría/división del club. El
   `id` es interno (se usa como clave en Firebase, no se muestra), `nombre` es
   lo que ve el usuario. `duracionTiempoMin` importa para todo lo que mida
