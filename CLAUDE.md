@@ -99,11 +99,14 @@ que vence → Inicio y Reportes, préstamo con nota, Fixture general (Jornada
 4-1 y 2-2 con Cuarta+Quinta, totales y % verificados a mano), re-editar un
 partido desde "Agregar" sin borrar el día ni el Detalle, entrenamiento en
 3 categorías, filtros del plantel, rol lector (sin controles de edición),
-y celular (375px: sin scroll horizontal de página). **Sin probar todavía:
-Informes y "Pasar de categoría"** — el proyecto de prueba tiene publicadas
-las reglas viejas (sin `informes`) y Firebase los rechaza; falta publicar
-el `rules.example.json` nuevo en la consola (la sesión de Google del
-navegador venció).
+y celular (375px: sin scroll horizontal de página). Con las reglas nuevas
+publicadas en el proyecto de prueba: informe guardado, y pase de 2
+jugadores de Cuarta a Quinta (se movieron su lesión, préstamo con nota e
+informe; la consulta de otro jugador quedó en Cuarta; la convocatoria vieja
+los muestra como "fuera del plantel" y re-guardarla no les borra los goles;
+el historial se ve completo desde Quinta). Recorridas todas las vistas en 3
+categorías sin errores de consola. Los datos de estas pruebas quedaron en
+el Firebase de prueba como demo (Aguirre y Benitez ahora están en Quinta).
 
 **2026-10-02 — Despliegue de prueba real.** Proyecto Firebase
 `plataforma-futbol-test` (plan gratuito, Realtime Database + Auth
@@ -353,8 +356,6 @@ con `csv_generico` apuntando a su export.
   todo por temporada 2024/2025/2026). Hoy una instancia sirve para una
   temporada; para la segunda hay que decidir si se prefijan las rutas con el
   año o se archiva un backup y se arranca limpio. Decisión pendiente.
-- Publicar `rules.example.json` en el proyecto de prueba y probar Informes y
-  "Pasar de categoría" contra Firebase real.
 - Sin probar NADA de esto (desde Fase 1) contra un club real todavía —
   todo lo automático (Catapult, adaptadores de liga) está verificado con
   datos de prueba armados a mano, no con cuentas/sitios reales.
