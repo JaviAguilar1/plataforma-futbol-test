@@ -28,6 +28,16 @@ aparte, sin tocarse) para poder ofrecérsela a otro club en 2027.
 
 # Estado del proyecto
 
+**2026-10-22 — "Por jugar" y próximo partido.** El resultado solo admitía
+Victoria/Empate/Derrota/No disputado: no se podía cargar el fixture por
+adelantado ni armar la convocatoria antes de jugar sin inventar un
+resultado (y un pendiente con 0-0 contaba como empate). Ahora "Por jugar"
+es la opción por defecto, guarda los goles vacíos y queda afuera de
+estadísticas, tabla propia y recordatorios. Inicio muestra el **próximo
+partido** (primera fecha "Por jugar"): día, rival, posiciones de los dos en
+la tabla cargada, si hay convocatoria y quiénes no pueden jugar por
+tarjetas. Probado con la fecha 11 (queda cargada como demo).
+
 **2026-10-22 — App instalable y uso sin señal (de Tigre, generalizado).**
 `manifest.json` + `sw.js` + íconos genéricos (`icons/`, sin marcas de
 club). El service worker sirve la app desde la red y, sin señal, desde su

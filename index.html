@@ -709,6 +709,7 @@ function renderVistaActual(){
 // G/E/P sale del campo "resultado" que se elige a mano; si no está, de los goles.
 function desenlace(p){
   if(!p) return null;
+  if(p.resultado === 'Por jugar') return null;
   const r = {Victoria:'G', Empate:'E', Derrota:'P'}[p.resultado];
   if(r) return r;
   if(p.resultado === 'No Disputado' || p.golesFavor == null || p.golesContra == null) return null;
@@ -829,7 +830,7 @@ function renderInicio(){
   const sec = document.getElementById('vistaInicio');
   sec.classList.remove('oculto');
   if(!db){ sec.innerHTML = '<p>Configurá Firebase (config/firebase.js) para ver y cargar datos.</p>'; return; }
-  const d = {plantel:{}, lesiones:{}, contratos:{}, partidos:{}, convocatorias:{}};
+  const d = {plantel:{}, lesiones:{}, contratos:{}, partidos:{}, convocatorias:{}, tablaPosiciones:{}};
   const rerender = ()=>{ sec.innerHTML = inicioHTML(d); };
   suscribirRefs(_refsInicio, Object.keys(d).flatMap(k=> paresPorCategoria(k, v=>{ d[k]=v; rerender(); })));
 }
@@ -863,6 +864,7 @@ function inicioHTML(d){
   const ultimos = Object.entries(partidosCat).filter(([,p])=>desenlace(p)).sort((a,b)=>(+b[0])-(+a[0])).slice(0,5);
   const st = Object.entries(statsJugadores(d.convocatorias[cat], partidosCat));
   const tarjetas = situacionTarjetas(d.convocatorias[cat], partidosCat);
+  const proximo = Object.entries(partidosCat).filter(([,p])=> p.resultado === 'Por jugar').sort((a,b)=> (+a[0]) - (+b[0]))[0];
   const top = campo => st.filter(([,x])=>x[campo]>0).sort((a,b)=>b[1][campo]-a[1][campo]).slice(0,5);
   const listaTop = (campo, vacio) => {
     const t = top(campo);
@@ -880,6 +882,7 @@ function inicioHTML(d){
       <td>${p.golesFavor ?? ''} - ${p.golesContra ?? ''}</td><td>${badge(desenlace(p))}</td></tr>`).join('')}</tbody></table>`
       : '<p class="nota">Sin partidos jugados cargados.</p>'}
   </div>
+  ${proximo ? proximoPartidoHTML(cat, proximo[0], proximo[1], d) : ''}
   <div class="grid2">
     <div class="card"><h2>Goleadores</h2>${listaTop('goles', 'Sin goles cargados en las convocatorias.')}</div>
     <div class="card"><h2>Asistencias</h2>${listaTop('asist', 'Sin asistencias cargadas en las convocatorias.')}</div>
@@ -921,6 +924,32 @@ function inicioHTML(d){
     }).join('')}</tbody></table>` : '<p class="nota">Nadie cumple años este mes (o falta cargar la fecha de nacimiento).</p>'}
   </div>
   ${temporadaAdminHTML()}`;
+}
+
+// Próximo partido (primera fecha "Por jugar"): rival, posiciones en la tabla
+// cargada, convocatoria y quiénes no pueden jugar por tarjetas.
+function proximoPartidoHTML(cat, fecha, p, d){
+  const tabla = d.tablaPosiciones[cat];
+  const filas = Array.isArray(tabla) ? tabla : Object.values(tabla || {});
+  const fila = nombre => {
+    const n = sinAcentos(nombre || '');
+    if(!n) return null;
+    const i = filas.findIndex(f=>{ const e = sinAcentos(f.equipo || ''); return e && (e.includes(n) || n.includes(e)); });
+    return i < 0 ? null : {...filas[i], pos: filas[i].pos ?? i+1};
+  };
+  const rival = fila(p.rival), propio = fila(CLUB.fuentes?.liga?.config?.nombreEquipoEnLiga || CLUB.club.nombre);
+  const conv = d.convocatorias[cat]?.[fecha];
+  const tarjetas = situacionTarjetas(d.convocatorias[cat], d.partidos[cat], fecha);
+  const nombre = id => d.plantel[cat]?.[id] ? nombreCompleto(d.plantel[cat][id]) : (tarjetas.nombre[id] || '');
+  const suspendidos = Object.keys(tarjetas.suspendido).map(nombre).filter(Boolean);
+  return `
+  <div class="card">
+    <h2>Próximo partido</h2>
+    <p style="font-size:1.05rem;margin:4px 0 10px;"><b>Fecha ${fecha}</b>${p.fechaPartido ? ' · ' + esc(fechaCorta(p.fechaPartido, true)) : ''} · vs <b>${esc(p.rival)}</b> (${esc(p.localia)})${p.competencia ? ' · ' + esc(p.competencia) : ''}</p>
+    ${rival || propio ? `<p class="nota">En la tabla: ${propio ? `nosotros ${propio.pos}° (${propio.pts ?? '—'} pts)` : ''}${propio && rival ? ' · ' : ''}${rival ? `${esc(p.rival)} ${rival.pos}° (${rival.pts ?? '—'} pts)` : ''}</p>` : ''}
+    <p class="nota">${conv ? `Convocatoria cargada: ${Object.keys(conv).length} jugadores.` : 'Todavía no se cargó la convocatoria.'}
+      ${suspendidos.length ? ` <b style="color:var(--rojo);">No pueden jugar por tarjetas: ${esc(suspendidos.join(', '))}.</b>` : ''}</p>
+  </div>`;
 }
 
 // ---------- Estadísticas (por categoría) ----------
@@ -2294,7 +2323,7 @@ function partidosHTML(cat, datos, plantel, convocatorias){
       <select id="mLocalia"><option value="Local">Local</option><option value="Visitante">Visitante</option></select>
       <input id="mGF" type="number" placeholder="Goles a favor">
       <input id="mGC" type="number" placeholder="Goles en contra">
-      <select id="mResultado"><option>Victoria</option><option>Empate</option><option>Derrota</option><option>No Disputado</option></select>
+      <select id="mResultado"><option>Por jugar</option><option>Victoria</option><option>Empate</option><option>Derrota</option><option>No Disputado</option></select>
       <button class="accion" onclick="agregarPartido()">Agregar</button>
     </div>`:''}
     <table>
@@ -2314,6 +2343,8 @@ function agregarPartido(){
     golesContra: Number(document.getElementById('mGC').value || 0),
     resultado: document.getElementById('mResultado').value
   };
+  // Fixture cargado por adelantado: sin goles, así no cuenta como 0-0.
+  if(p.resultado === 'Por jugar'){ p.golesFavor = null; p.golesContra = null; }
   // Solo si se cargó: este formulario también sirve para corregir una fecha
   // ya cargada y no debe borrar el día que se haya puesto en "Detalle".
   const fechaPartido = document.getElementById('mFechaPartido').value;
@@ -2711,7 +2742,7 @@ function compararResultado(fecha, manual, liga){
 function calcularTablaPropia(partidosManual){
   let pj=0, pg=0, pe=0, pp=0, gf=0, gc=0;
   Object.values(partidosManual).forEach(p=>{
-    if(!p.resultado || p.resultado === 'No Disputado') return;
+    if(!desenlace(p)) return;
     pj++;
     gf += p.golesFavor || 0;
     gc += p.golesContra || 0;
@@ -2735,7 +2766,7 @@ function recordatoriosLinks(partidosManual, omitidos){
   const tipos = CLUB.linksPartido || [];
   const avisos = [];
   Object.entries(partidosManual).forEach(([fecha,p])=>{
-    if(!p.resultado || p.resultado === 'No Disputado') return;
+    if(!desenlace(p)) return;
     if(omitidos[fecha]) return;
     const links = p.links || {};
     if(!tipos.some(t=>links[t])) avisos.push({fecha, rival:p.rival});
